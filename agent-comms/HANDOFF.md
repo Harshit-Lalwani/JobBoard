@@ -196,3 +196,40 @@ Commit range: 05546ca..b624304
 ### Exit criteria met?
 - Yes. Auth routes work end-to-end via Supertest (12 route tests) and were additionally verified against a
   live server. RBAC middleware has dedicated unit tests (6 tests). `npm run lint` clean.
+
+---
+
+## Phase 3 — Listings CRUD · CC (Haiku) · 2026-07-12
+Commit range: b624304..8ec6974
+
+### What I did
+- `src/validation/listing.schema.js`: `createListingSchema` (required: title, description, location;
+  optional: tags[]) and `updateListingSchema` (all fields optional). Mirrors `auth.schema.js` style.
+- `src/services/listing.service.js`: `createListing` (sets posterId), `getListing`, `updateListing` (403
+  if user isn't the poster), `deleteListing` (403 if user isn't the poster), `listListings` (returns all
+  open listings only). Authorization checks at the service layer, not the controller.
+- `src/controllers/listing.controller.js`: thin req/res handlers (5 endpoints), all call the service and
+  pass errors to `next()`.
+- `src/routes/listing.routes.js`: GET `/` (public, anyone), GET `/:id` (public), POST `/` (auth+poster),
+  PUT `/:id` (auth+poster), DELETE `/:id` (auth+poster). Validation middleware on POST/PUT.
+- `src/app.js`: mounted at `/api/listings`.
+- `tests/routes/listing.routes.test.js`: 14 new tests covering happy paths (create, get, list, update,
+  delete), authorization (401 unauthenticated, 403 applicant trying to create, 403 different poster
+  trying to update/delete), 404 not found, and 400 validation failures. Total is now 42/42 tests passing.
+
+### Diff check against previous entry
+- Confirmed: `git diff b624304..268a799` was handoff-log-only (57 insertions).
+
+### Decisions made
+- None new in this phase — all layering and RBAC patterns mirror Phase 2 exactly.
+
+### Open questions / blockers for the next agent
+- None blocking. Phase 4 (Applications & Status Pipeline) is next and is assigned to Claude Code again.
+  Listings now exist as full resources, so the dependency is satisfied.
+- Note: This phase was executed by CC (Haiku model), stepping in for the opencode slot in the plan to
+  keep momentum. The patterns are established and consistent; future phases can strictly follow the
+  route/controller/service/validation layering seen here.
+
+### Exit criteria met?
+- Yes. `npm test` → 6 suites / 42 tests all passing. `npm run lint` clean. Tested happy paths, RBAC
+  enforcement, authorization errors, and validation errors via Supertest.
