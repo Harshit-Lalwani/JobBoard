@@ -132,3 +132,17 @@ round trip) but reintroduces the exact XSS risk the httpOnly refresh cookie was 
 for consistency with the Phase 0 decision. A global "is refreshing" flag instead of a shared promise —
 would have caused duplicate concurrent refresh calls if multiple requests 401 at once right after token
 expiry; the shared `refreshPromise` collapses them into one.
+
+## Browse page pagination UI — decided in Phase 10 by CC
+**Decision:** The browse page uses a single "Load more" button that appends results, not numbered page
+links / a page-jump control.
+**Why:** This is a direct UI consequence of the Phase 0 cursor-pagination decision, worth being able to
+connect explicitly in an interview: a cursor only knows how to say "give me the page after *this specific
+item*," it has no concept of "give me page 7." A numbered-pages UI would require the client to either fake
+it (request page 1..N sequentially to reach page 7, defeating the point of avoiding `skip()`) or the API
+to expose a second, offset-based mode just for the UI — both wrong. "Load more" is the pagination UI that
+a cursor actually supports honestly.
+**Alternatives considered:** Numbered pages — rejected for the reason above. Infinite scroll (auto-load on
+scroll-to-bottom) — same underlying data-fetching as "Load more," just a different trigger; kept it as an
+explicit button for this pass since it's simpler to reason about and test, infinite scroll would be a
+small follow-up change to the trigger only, not the pagination logic.

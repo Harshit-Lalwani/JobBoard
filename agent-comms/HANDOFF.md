@@ -516,3 +516,61 @@ Commit range: 6095bfb..d912ea0 (includes `a1f6574`, this session's Phase 8 HANDO
   a role-appropriate dashboard shell (`/poster` or `/applicant`, redirect-on-role-mismatch and
   redirect-to-`/login`-when-signed-out both wired via `ProtectedRoute`). Backend still 98/98 (2 new
   `/me` tests). Frontend builds and lints clean.
+
+---
+
+## Phase 10 — Browse/Search/Filter Page · CC · 2026-07-13
+Commit range: d912ea0..9743f86 (includes `2bb5fc4`, this session's Phase 9 HANDOFF entry, written first)
+
+### What I did
+- `frontend/src/api/listings.js`: `getListings(params)`, `getListing(id)`, `createListing`,
+  `updateListing`, `deleteListing` — the last three unused until Phase 11, added now since they're trivial
+  wrappers around the same `apiClient` pattern and belong next to the read functions.
+- `frontend/src/api/applications.js`: `applyToListing`, `getApplicationsForListing`,
+  `updateApplicationStatus`, `getApplication` — same reasoning, `applyToListing` is used this phase, the
+  other three are Phase 11/12's.
+- `frontend/src/components/ListingCard.jsx`: compact card (title, location, truncated description, tag
+  pills), links to `/listings/:id`.
+- `frontend/src/pages/BrowsePage.jsx` — **replaces the placeholder `HomePage`** from Phase 9, now the `/`
+  route: search box, comma-separated tags input, location input, all submitted together as one query to
+  `GET /api/listings`. Pagination is a "Load more" button (see `DECISIONS.md` — a direct consequence of
+  cursor pagination not supporting arbitrary page jumps), appends `items` and advances `nextCursor`.
+- `frontend/src/pages/ListingDetailPage.jsx` — new, not originally itemized in `PLAN.md`'s Phase 10 but a
+  natural requirement once `ListingCard` needed somewhere to link to: fetches one listing, and if the
+  signed-in user is an applicant, shows an inline apply form (`resumeUrl` + optional `coverNote`) that
+  calls `POST /applications/:listingId/apply`. Posters/signed-out users see a message instead of the form
+  rather than a broken/hidden state.
+- `frontend/src/App.jsx`: `/` now renders `BrowsePage`, added `/listings/:id` → `ListingDetailPage`.
+- **Verified live** (same standalone-mongod + backend + `vite dev` pattern as Phase 9, through the actual
+  proxy, not mocked): created 2 listings, confirmed the browse response shape (`{items, nextCursor}`)
+  matches what `BrowsePage` consumes, confirmed `search=` and `tags=` filters each narrow to the expected
+  listing, fetched a single listing detail, and had a freshly-registered applicant apply to it — all via
+  the exact URLs/params the React components use. Scratch mongod script deleted afterward.
+- Note on process hygiene: this session's background dev-server processes (from both this phase's and
+  Phase 9's smoke tests) didn't die cleanly from `pkill` — had to `kill -9` by PID after checking `ps aux`.
+  Worth remembering for whoever does the next live smoke test in this repo: verify with `ps aux` after
+  `pkill`, don't assume it worked.
+
+### Diff check against previous entry
+- Confirmed: `git diff 6095bfb..d912ea0 --stat` (Phase 9's actual diff) matched the Phase 9 HANDOFF entry
+  — backend `/me` addition + all the frontend auth scaffolding listed, nothing else.
+
+### Decisions made (already in DECISIONS.md)
+- "Load more" over numbered pages for the browse UI, and why that's a direct consequence of the Phase 0
+  cursor-pagination choice rather than an independent UI preference.
+
+### Open questions / blockers for the next agent
+- None blocking. Phase 11 (Poster Dashboard) is next, also CC — the flagship interactive screen (listings
+  management + the applicant pipeline board). `updateListing`/`deleteListing` in `api/listings.js` and
+  `getApplicationsForListing`/`updateApplicationStatus` in `api/applications.js` are already written and
+  unused, ready to consume. `PosterDashboardPage.jsx` currently a placeholder — replace its body, the
+  route/guard in `App.jsx` doesn't need to change.
+- `ListingDetailPage` was added a phase early (Phase 10, not originally scoped there) because
+  `ListingCard` needed a destination — flagging in case this reads as scope creep relative to `PLAN.md`'s
+  phase-by-phase description. It's a small, self-contained addition and unblocks a dead link, not a
+  reach into Phase 11/12's territory.
+
+### Exit criteria met?
+- Yes (per `PLAN.md`: "Public listing browse page: search box, tag/location filters, pagination controls
+  wired to Phase 5's API"). Verified live through the proxy, not just built. Frontend builds and lints
+  clean.
