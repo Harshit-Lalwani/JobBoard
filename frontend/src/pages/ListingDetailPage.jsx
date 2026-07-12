@@ -3,14 +3,16 @@ import { useParams, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getListing } from "../api/listings.js";
 import { applyToListing } from "../api/applications.js";
+import { uploadResume } from "../api/uploads.js";
 
 export function ListingDetailPage() {
   const { id } = useParams();
   const { user, status } = useAuth();
   const [listing, setListing] = useState(null);
   const [loadError, setLoadError] = useState(null);
-  const [form, setForm] = useState({ resumeUrl: "", coverNote: "" });
-  const [applyState, setApplyState] = useState("idle"); // idle | submitting | applied | error
+  const [resumeFile, setResumeFile] = useState(null);
+  const [coverNote, setCoverNote] = useState("");
+  const [applyState, setApplyState] = useState("idle"); // idle | uploading | submitting | applied | error
   const [applyError, setApplyError] = useState(null);
 
   useEffect(() => {
@@ -21,10 +23,12 @@ export function ListingDetailPage() {
 
   async function handleApply(e) {
     e.preventDefault();
-    setApplyState("submitting");
     setApplyError(null);
     try {
-      await applyToListing(id, form);
+      setApplyState("uploading");
+      const { url: resumeUrl } = await uploadResume(resumeFile);
+      setApplyState("submitting");
+      await applyToListing(id, { resumeUrl, coverNote });
       setApplyState("applied");
     } catch (err) {
       setApplyState("error");
@@ -74,17 +78,16 @@ export function ListingDetailPage() {
           <form onSubmit={handleApply} className="space-y-4">
             <h2 className="text-lg font-semibold">Apply to this listing</h2>
             <div>
-              <label htmlFor="resumeUrl" className="block text-sm font-medium text-gray-700">
-                Resume URL
+              <label htmlFor="resume" className="block text-sm font-medium text-gray-700">
+                Resume (PDF)
               </label>
               <input
-                id="resumeUrl"
-                type="text"
+                id="resume"
+                type="file"
+                accept="application/pdf"
                 required
-                value={form.resumeUrl}
-                onChange={(e) => setForm({ ...form, resumeUrl: e.target.value })}
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-                placeholder="/uploads/my-resume.pdf"
+                onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
+                className="mt-1 w-full text-sm"
               />
             </div>
             <div>
@@ -93,8 +96,8 @@ export function ListingDetailPage() {
               </label>
               <textarea
                 id="coverNote"
-                value={form.coverNote}
-                onChange={(e) => setForm({ ...form, coverNote: e.target.value })}
+                value={coverNote}
+                onChange={(e) => setCoverNote(e.target.value)}
                 className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
                 rows={4}
               />
@@ -102,10 +105,14 @@ export function ListingDetailPage() {
             {applyError && <p className="text-sm text-red-600">{applyError}</p>}
             <button
               type="submit"
-              disabled={applyState === "submitting"}
+              disabled={applyState === "uploading" || applyState === "submitting"}
               className="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
             >
-              {applyState === "submitting" ? "Submitting…" : "Apply"}
+              {applyState === "uploading"
+                ? "Uploading resume…"
+                : applyState === "submitting"
+                  ? "Submitting…"
+                  : "Apply"}
             </button>
           </form>
         ) : status === "signed-in" ? (

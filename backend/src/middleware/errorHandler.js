@@ -1,3 +1,5 @@
+import { MulterError } from "multer";
+
 /** Centralized error-handling middleware. Routes/services throw or call next(err); this is the single place that shapes the HTTP error response. */
 export class ApiError extends Error {
   constructor(statusCode, message, details) {
@@ -18,6 +20,12 @@ export function errorHandler(err, req, res, next) {
   // generic 500 branch below, which is wrong: it's a malformed client request, not a server fault.
   if (err.name === "CastError") {
     return res.status(400).json({ error: { message: `Invalid id: ${err.value}` } });
+  }
+
+  // multer throws MulterError (e.g. LIMIT_FILE_SIZE) for upload problems — also a client error,
+  // not a server fault, same reasoning as CastError above.
+  if (err instanceof MulterError) {
+    return res.status(400).json({ error: { message: err.message } });
   }
 
   const statusCode = err.statusCode || 500;

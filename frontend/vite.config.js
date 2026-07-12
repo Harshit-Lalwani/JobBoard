@@ -8,6 +8,10 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': 'http://localhost:4000',
+      // Uploaded resumes are served by the backend's express.static('/uploads') — without this,
+      // the dev server falls back to the SPA's index.html for any /uploads/* request instead of
+      // forwarding it, since it only knows about /api by default.
+      '/uploads': 'http://localhost:4000',
     },
   },
 })
