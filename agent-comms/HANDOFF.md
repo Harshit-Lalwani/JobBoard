@@ -574,3 +574,67 @@ Commit range: d912ea0..9743f86 (includes `2bb5fc4`, this session's Phase 9 HANDO
 - Yes (per `PLAN.md`: "Public listing browse page: search box, tag/location filters, pagination controls
   wired to Phase 5's API"). Verified live through the proxy, not just built. Frontend builds and lints
   clean.
+
+---
+
+## Phase 11 — Poster Dashboard · CC · 2026-07-13
+Commit range: 9743f86..bb8372f (includes `6a88894`, this session's Phase 10 HANDOFF entry, written first)
+
+### What I did
+- **Small backend addition first**: `GET /api/listings/mine` (poster-only, all statuses, no pagination —
+  see `DECISIONS.md` for why this is a separate route rather than extending the public browse endpoint's
+  query params). Added `listMyListings` to service/controller, mounted before `GET /:id` (route-ordering
+  matters — `/mine` would otherwise be swallowed by the `:id` param matcher). 3 new backend tests: happy
+  path (confirms closed listings are included and other posters' listings are excluded), 401, 403.
+  Backend now 101/101.
+- `frontend/src/utils/statusMachine.js`: a second copy of the backend's transition graph, used only to
+  decide which "move to X" buttons the pipeline board renders — backend remains sole enforcer. Full
+  duplication rationale in `DECISIONS.md`, including the explicit "keep these two files in sync" warning
+  in both files' comments.
+- `frontend/src/components/ListingForm.jsx`: shared create/edit form (title, description, location,
+  comma-separated tags), used both inline for creating and inline per-row for editing.
+- `frontend/src/components/PipelineBoard.jsx`: fetches `GET /applications/listing/:listingId`, renders a
+  5-column Kanban board (one per `APPLICATION_STATUSES` value), each applicant card shows name/email/cover
+  note/resume link plus only the legal next-status buttons for that card's current status (via the
+  frontend statusMachine mirror), calling `PUT /applications/:id/status` on click and patching local state
+  with the response rather than refetching the whole board.
+- `frontend/src/pages/PosterDashboardPage.jsx` — **replaces the Phase 9 placeholder**: loads
+  `GET /listings/mine` on mount, inline create form (toggle-shown), per-listing row with Edit (swaps the
+  row for a `ListingForm`)/Toggle open-closed/Delete (with a `window.confirm` guard)/View-applicants
+  (expands a `PipelineBoard` inline under that row) actions.
+- **Verified live** (same standalone-mongod + backend + `vite dev` pattern as Phases 9-10, through the
+  actual proxy): created a listing, confirmed `/listings/mine` returns it, toggled it closed and confirmed
+  `/mine` still shows it (proving the "unlike public browse" behavior actually works, not just compiles),
+  had an applicant apply, confirmed the poster's pipeline-board fetch shows them under "applied," moved
+  them `applied → shortlisted` via the same request the button click makes, then — as a direct test of the
+  frontend/backend transition-graph duplication actually being in sync — attempted the illegal
+  `shortlisted → offer` jump (a button the UI would never render) directly against the API and confirmed
+  the backend still independently rejects it with 400. Scratch mongod script deleted afterward. Also
+  had to `kill -9` by PID again after `pkill` didn't reliably stop the background dev processes — same
+  note as Phase 10, flagging again since it's now happened twice.
+
+### Diff check against previous entry
+- Confirmed: `git diff d912ea0..9743f86 --stat` (Phase 10's actual diff) matched the Phase 10 HANDOFF
+  entry — the two new API wrapper files, `ListingCard`, `BrowsePage`, `ListingDetailPage`, and the
+  `App.jsx` route change, nothing else.
+
+### Decisions made (already in DECISIONS.md)
+- `GET /api/listings/mine` as a separate poster-scoped endpoint rather than overloading the public one.
+- Frontend duplication of the transition graph, and why (with the drift risk called out explicitly).
+
+### Open questions / blockers for the next agent
+- None blocking. Phase 12 (Applicant Dashboard) is next, also CC — "my applications" list + status view.
+  **There is currently no backend endpoint for an applicant to list their own applications across all
+  listings** (`GET /applications/listing/:listingId` is poster-scoped to one listing;
+  `GET /applications/:applicationId` needs the id already known). Phase 12 will need a small backend
+  addition analogous to this phase's `/listings/mine` — something like `GET /api/applications/mine`
+  (applicant-only, all their own applications across listings, populated with listing title). Follow the
+  same pattern: service function, controller, route registered before any conflicting `:id`-shaped route,
+  tests for happy path + 401 + role restriction.
+- `frontend/src/utils/statusMachine.js` now exists — Phase 12's applicant-facing status display can import
+  `APPLICATION_STATUSES` from it for consistent labeling, no need to redefine the list a third time.
+
+### Exit criteria met?
+- Yes (per `PLAN.md`: "Manage-listings view (CRUD) + pipeline board to view/move applicants through
+  statuses"). Verified live through the proxy including the illegal-transition-still-rejected case, not
+  just the happy path. Backend 101/101, frontend builds and lints clean.

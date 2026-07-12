@@ -146,3 +146,40 @@ a cursor actually supports honestly.
 scroll-to-bottom) — same underlying data-fetching as "Load more," just a different trigger; kept it as an
 explicit button for this pass since it's simpler to reason about and test, infinite scroll would be a
 small follow-up change to the trigger only, not the pagination logic.
+
+## Poster-only "my listings" endpoint — decided in Phase 11 by CC
+**Decision:** Added `GET /api/listings/mine` (poster-only), returning *all* of the requesting poster's own
+listings regardless of status, with no pagination. Kept separate from `GET /api/listings` rather than
+extending that endpoint's query params.
+**Why:** The public browse endpoint defaults `status` to `"open"` deliberately (Phase 5) — anonymous
+browsing shouldn't surface closed listings. A poster managing their own listings needs the opposite
+default: see everything, including closed ones, scoped to just themselves. Overloading the public
+endpoint with a "show me all statuses for this poster" mode would mean either a second, differently-scoped
+meaning for the existing `status` param, or a new `posterId` param that only makes sense when it equals
+`req.user.id` — both muddy what's supposed to be a simple public read endpoint. A dedicated route keeps
+the public endpoint's contract (and the reasoning behind its default) unchanged. No pagination on `/mine`
+because it's bounded to one poster's own listings, not the open-ended public catalog Phase 5's cursor
+pagination exists for.
+**Alternatives considered:** `GET /api/listings?posterId=me&status=all` — rejected per above (conflates
+two different endpoints' concerns). Client-side filtering of the full public listing set down to the
+poster's own — rejected, wasteful (fetches every other poster's open listings just to discard them) and
+still wouldn't surface the poster's *closed* listings, which the public endpoint never returns at all.
+
+## Frontend duplication of the status-transition graph — decided in Phase 11 by CC
+**Decision:** `frontend/src/utils/statusMachine.js` contains a second copy of the transition graph from
+`backend/src/utils/statusMachine.js`, used only to decide which "move to X" buttons the pipeline board
+shows for a given application. The backend remains the sole enforcer — every transition still round-trips
+through `PUT /applications/:id/status`, which validates independently.
+**Why:** Without this, the UI would either have to show every status as a candidate button and let the
+server reject illegal ones (bad UX — buttons that are always wrong to click), or fetch "what's legal from
+here" from the server before rendering each card (an extra round trip per applicant card, for a graph
+that's static and small). Duplicating a 5-line, rarely-changing lookup table client-side is a reasonable
+trade given the alternative costs; the risk (drift between the two copies) is called out explicitly in
+both files' comments so it isn't a silent trap.
+**Alternatives considered:** An API endpoint like `GET /applications/:id/legal-transitions` — more
+"correct" in the sense of a single source of truth, but adds a new endpoint and a request per card for a
+value that's a pure function of a 5-status enum; rejected as disproportionate. Exposing the backend's
+transition table via a shared package/module between frontend and backend — would solve the duplication
+cleanly in a monorepo with a shared package, but this project's frontend/backend aren't set up as
+workspaces with shared internal packages, so it would be a bigger structural change than this decision
+warrants for a 5-entry table.
