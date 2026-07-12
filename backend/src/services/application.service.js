@@ -64,6 +64,17 @@ export async function updateApplicationStatus(applicationId, posterId, data) {
   return application;
 }
 
+// Applicant-scoped: all of the current applicant's own applications across every listing they've
+// applied to, newest first, with the listing title populated so the UI can show what each row is
+// for without a second round trip per row.
+export async function getApplicationsForApplicant(applicantId) {
+  const applications = await Application.find({ applicantId })
+    .populate("listingId", "title location status")
+    .sort({ createdAt: -1 });
+
+  return applications;
+}
+
 export async function getApplicationById(applicationId) {
   const application = await Application.findById(applicationId)
     .populate("applicantId", "name email")

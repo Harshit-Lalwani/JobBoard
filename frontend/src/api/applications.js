@@ -4,6 +4,10 @@ export function applyToListing(listingId, data) {
   return apiClient.post(`/applications/${listingId}/apply`, data).then((res) => res.data);
 }
 
+export function getMyApplications() {
+  return apiClient.get("/applications/mine").then((res) => res.data);
+}
+
 export function getApplicationsForListing(listingId) {
   return apiClient.get(`/applications/listing/${listingId}`).then((res) => res.data);
 }

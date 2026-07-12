@@ -335,6 +335,57 @@ describe("PUT /api/applications/:applicationId/status", () => {
   });
 });
 
+describe("GET /api/applications/mine", () => {
+  it("returns only the current applicant's own applications, across listings", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    const listing1Id = await createListing(posterToken, { ...listingData, title: "Listing A" });
+    const listing2Id = await createListing(posterToken, { ...listingData, title: "Listing B" });
+
+    const applicantToken = await registerAndGetToken(applicantData);
+    await request(app)
+      .post(`/api/applications/${listing1Id}/apply`)
+      .set("Authorization", `Bearer ${applicantToken}`)
+      .send(applicationData);
+    await request(app)
+      .post(`/api/applications/${listing2Id}/apply`)
+      .set("Authorization", `Bearer ${applicantToken}`)
+      .send(applicationData);
+
+    const otherApplicantToken = await registerAndGetToken({
+      name: "Other Applicant",
+      email: "otherapplicant@example.com",
+      password: "otherapplicant1",
+      role: "applicant",
+    });
+    await request(app)
+      .post(`/api/applications/${listing1Id}/apply`)
+      .set("Authorization", `Bearer ${otherApplicantToken}`)
+      .send(applicationData);
+
+    const res = await request(app)
+      .get("/api/applications/mine")
+      .set("Authorization", `Bearer ${applicantToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body.map((a) => a.listingId.title).sort()).toEqual(["Listing A", "Listing B"]);
+  });
+
+  it("requires authentication", async () => {
+    const res = await request(app).get("/api/applications/mine");
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects posters with 403", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    const res = await request(app)
+      .get("/api/applications/mine")
+      .set("Authorization", `Bearer ${posterToken}`);
+
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("GET /api/applications/:applicationId", () => {
   it("returns application details with populated references", async () => {
     const posterToken = await registerAndGetToken(posterData);

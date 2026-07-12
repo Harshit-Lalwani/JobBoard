@@ -34,6 +34,15 @@ export async function updateApplicationStatus(req, res, next) {
   }
 }
 
+export async function getApplicationsForApplicant(req, res, next) {
+  try {
+    const applications = await applicationService.getApplicationsForApplicant(req.user.id);
+    res.json(applications);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getApplicationById(req, res, next) {
   try {
     const application = await applicationService.getApplicationById(req.params.applicationId);

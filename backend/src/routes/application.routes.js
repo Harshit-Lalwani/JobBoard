@@ -28,6 +28,15 @@ router.get(
   applicationController.getApplicationsForListing
 );
 
+// Applicant-only: all of the current applicant's own applications, across every listing. Must be
+// registered before "/:applicationId" — otherwise Express would match "mine" as that param.
+router.get(
+  "/mine",
+  requireAuth,
+  requireRole("applicant"),
+  applicationController.getApplicationsForApplicant
+);
+
 // Get details of a single application (for now, no auth — could restrict to applicant or poster)
 router.get("/:applicationId", requireAuth, applicationController.getApplicationById);
 
