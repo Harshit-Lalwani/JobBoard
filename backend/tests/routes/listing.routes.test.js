@@ -190,6 +190,54 @@ describe("GET /api/listings", () => {
   });
 });
 
+describe("GET /api/listings/mine", () => {
+  it("returns only the current poster's own listings, including closed ones", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    const createRes = await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send(listingData);
+    await request(app)
+      .put(`/api/listings/${createRes.body._id}`)
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ status: "closed" });
+
+    const otherPosterToken = await registerAndGetToken({
+      name: "Other Poster",
+      email: "otherposter@example.com",
+      password: "otherposter1",
+      role: "poster",
+    });
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${otherPosterToken}`)
+      .send({ ...listingData, title: "Someone Else's Listing" });
+
+    const res = await request(app)
+      .get("/api/listings/mine")
+      .set("Authorization", `Bearer ${posterToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].title).toBe(listingData.title);
+    expect(res.body[0].status).toBe("closed");
+  });
+
+  it("requires authentication", async () => {
+    const res = await request(app).get("/api/listings/mine");
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects applicants with 403", async () => {
+    const applicantToken = await registerAndGetToken(applicantData);
+    const res = await request(app)
+      .get("/api/listings/mine")
+      .set("Authorization", `Bearer ${applicantToken}`);
+
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("POST /api/listings", () => {
   it("creates a listing (poster only)", async () => {
     const posterToken = await registerAndGetToken(posterData);

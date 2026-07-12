@@ -44,6 +44,14 @@ export async function deleteListing(id, posterId) {
   await Listing.deleteOne({ _id: id });
 }
 
+// Poster-scoped: unlike listListings, this returns every status (not just "open") since a
+// poster managing their own listings needs to see closed ones too. No pagination — bounded to
+// one poster's own listings, not the kind of unbounded public browse Phase 5's cursor is for.
+export async function listMyListings(posterId) {
+  const listings = await Listing.find({ posterId }).sort({ createdAt: -1 });
+  return listings;
+}
+
 export async function listListings(query) {
   const { search, tags, location, status = "open", cursor, limit } = query;
 

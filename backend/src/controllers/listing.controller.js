@@ -48,3 +48,12 @@ export async function listListings(req, res, next) {
     next(err);
   }
 }
+
+export async function listMyListings(req, res, next) {
+  try {
+    const listings = await listingService.listMyListings(req.user.id);
+    res.json(listings);
+  } catch (err) {
+    next(err);
+  }
+}

@@ -4,6 +4,10 @@ export function getListings(params = {}) {
   return apiClient.get("/listings", { params }).then((res) => res.data);
 }
 
+export function getMyListings() {
+  return apiClient.get("/listings/mine").then((res) => res.data);
+}
+
 export function getListing(id) {
   return apiClient.get(`/listings/${id}`).then((res) => res.data);
 }
