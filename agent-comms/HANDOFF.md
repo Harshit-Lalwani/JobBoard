@@ -83,3 +83,59 @@ Commit range: 0ba8117..3f404aa
 - Yes. Verified directly (not just visually): `cd backend && npm install && npm run dev` boots the API
   and `curl localhost:4000/health` returns `{"status":"ok"}`. `cd frontend && npm install && npm run dev`
   serves 200 on `/`, and `npm run build` succeeds cleanly (build output not committed).
+
+---
+
+## Phase 1 — Mongoose Models & Indexes · CC · 2026-07-12
+Commit range: 3f404aa..05546ca (Phase 0's handoff-log commit `5dead7f` is included in this range too,
+since it landed before Phase 1 started)
+
+### What I did
+- `src/models/User.js`: `name`, `email` (unique, lowercased, regex-validated), `passwordHash`, `role`
+  (enum `poster`/`applicant`), `refreshTokenHash` (nullable — added now since the Phase 0 refresh-token
+  decision requires storing a hashed token server-side; Phase 2 will populate it).
+- `src/models/Listing.js`: `title`, `description`, `tags[]`, `location`, `posterId` (ref `User`),
+  `status` (enum `open`/`closed`, default `open`). Three indexes, all named and explained in
+  `DECISIONS.md`: a weighted text index on `title`/`description` (`listing_text_search`), a compound
+  filter index on `tags`/`location`/`status` (`listing_filter_compound`), and a separate
+  `{createdAt: -1, _id: -1}` index (`listing_cursor_pagination`) sized specifically for Phase 5's cursor
+  pagination — deliberately not folded into the filter index, see `DECISIONS.md` for why.
+- `src/models/Application.js`: `listingId`/`applicantId` (refs), `resumeUrl`, `coverNote`, `status` (enum,
+  default `applied`), `statusHistory[]` defaulting to a single `applied` entry on creation. Unique compound
+  index on `{listingId, applicantId}` so double-applying is rejected at the DB layer, plus a
+  `{listingId, status}` index for the poster's "list applicants" view. Note: this schema only *records*
+  history — the legal-transition state machine enforcement is explicitly deferred to Phase 4's service
+  layer, not implemented here.
+- `src/config/db.js`: `connectDB()`/`disconnectDB()`, wired into `src/index.js` so the server now connects
+  to Mongo before it starts listening (fails fast with a clear log line + `process.exit(1)` if the
+  connection fails, rather than serving traffic against a dead DB).
+- Tests: `tests/setupTestDB.js` (connect/clear/close helpers) + one Jest file per model
+  (`tests/models/{User,Listing,Application}.test.js`), 12 tests total — required-field validation, enum
+  validation, and uniqueness constraints per model, plus an explicit assertion that the two named Listing
+  indexes exist. Added `mongodb-memory-server` as a devDependency so these run against a real (ephemeral)
+  mongod with no external DB dependency; added `jest.config.js` (`transform: {}`, since Node's native ESM
+  needs no Babel step here).
+- Full rationale for the index choices and the Application uniqueness constraint is in `DECISIONS.md`.
+
+### Diff check against previous entry
+- Confirmed: `git diff 0ba8117..3f404aa --stat` matched the Phase 0 entry's file list exactly, and
+  `5dead7f` was verified to be handoff-log-only (`agent-comms/HANDOFF.md`, 46 insertions, nothing else).
+
+### Decisions made (also copied to DECISIONS.md)
+- Listing index design (text index weighting, compound filter index field order, separate pagination
+  index) — see `DECISIONS.md` for the full reasoning, this is meant to be interview-ready as-is.
+- Application uniqueness enforced via a unique compound index, not just service-layer checks.
+
+### Open questions / blockers for the next agent
+- None blocking. Phase 2 (CC) — Auth — can start immediately. `User.refreshTokenHash` is already on the
+  schema and ready to be populated; `env.jwtAccessSecret`/`jwtRefreshSecret`/`accessTokenTtl`/
+  `refreshTokenTtl` are already in `src/config/env.js` from Phase 0.
+- This sandbox has no real `mongod` installable via apt (`mongodb-org` isn't in the default repos) — I
+  verified `src/index.js`'s real DB connection path (not just the test suite) by spinning up a standalone
+  `mongodb-memory-server` instance and pointing `MONGO_URI` at it manually; that scratch script was
+  deleted afterward, it's not part of the repo. If Phase 2's environment has real MongoDB, no action
+  needed — just noting how this was verified here in case it isn't.
+
+### Exit criteria met?
+- Yes. `npm test` → 3 suites / 12 tests passing. `npm run lint` clean. Manually verified `src/index.js`
+  connects to MongoDB and then boots the API (see note above on how, given no local `mongod`).
