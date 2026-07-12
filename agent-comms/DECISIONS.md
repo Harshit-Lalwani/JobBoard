@@ -98,3 +98,37 @@ rejected, adds a second cookie and a second thing to keep in sync for no real be
 id in a signed token the client can't read anyway (httpOnly). Fully stateless refresh (JWT only, no DB
 hash) — rejected because it removes the ability to revoke on logout before natural expiry, which was a
 deliberate assumption in the Phase 0 decision.
+
+## Frontend session restore (`GET /api/auth/me`) — decided in Phase 9 by CC
+**Decision:** Added a small `GET /api/auth/me` endpoint (auth required, returns the public user shape)
+so the frontend can restore full user info (name/email/role) after a silent refresh on page load.
+`POST /api/auth/refresh` only ever returns a new access token by design (see the refresh-token decision
+above), so on its own it can't repopulate the UI's "who is this user" state after a hard reload.
+**Why:** The alternative — decoding the access token's JWT payload client-side to read `sub`/`role` — only
+recovers `id` and `role`, not `name`/`email`, and blurs the line between "data the client is allowed to
+read" and "data that happens to be readable because JWTs aren't encrypted." A dedicated `/me` endpoint
+keeps that boundary explicit and gives the frontend exactly the same public user shape it already gets
+from `/register` and `/login`, so `AuthContext` doesn't need two different user object shapes depending on
+how the session was established.
+**Alternatives considered:** JWT payload decoding on the client (rejected, per above). Embedding full user
+info in the access token itself (rejected — bloats every request's Authorization header with data that's
+only needed once per page load, and stale name/email in the token until it expires if the user edits their
+profile later).
+
+## Frontend auth-state architecture — decided in Phase 9 by CC
+**Decision:** Access token lives only in a module-level JS variable inside `src/api/client.js` (not
+`localStorage`/`sessionStorage`), attached to outgoing requests via an axios request interceptor. A
+response interceptor catches a single `401`, attempts one silent `POST /auth/refresh` (cookie-based,
+automatic), and retries the original request exactly once before giving up. `AuthContext` performs the
+same refresh-then-`/me` sequence once on mount to restore a session across a hard page reload.
+**Why:** Keeping the access token out of `localStorage` avoids XSS-exfiltration of it, matching the same
+reasoning already applied to the refresh token in Phase 0/2 — an in-memory access token is lost on reload
+by design, which is exactly why the refresh-cookie + `/me` round trip on mount exists. The one-shot retry
+guard (`config._retried`) prevents an infinite refresh loop if the refresh endpoint itself ever returns
+401 (e.g. a genuinely expired/revoked refresh token) or a legitimately-401 endpoint is called after a
+successful refresh.
+**Alternatives considered:** Access token in `localStorage` — simpler (survives reload without a refresh
+round trip) but reintroduces the exact XSS risk the httpOnly refresh cookie was chosen to avoid; rejected
+for consistency with the Phase 0 decision. A global "is refreshing" flag instead of a shared promise —
+would have caused duplicate concurrent refresh calls if multiple requests 401 at once right after token
+expiry; the shared `refreshPromise` collapses them into one.

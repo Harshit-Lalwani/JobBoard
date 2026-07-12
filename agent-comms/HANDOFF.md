@@ -451,3 +451,68 @@ Commit range: 5e5478f..6095bfb (includes `7a6d1ed`, this session's Phase 7 HANDO
 ### Exit criteria met?
 - Yes. `npm test` → 9 suites / 96 tests all passing. `npm run lint` clean. Backend is feature-complete
   and closed out per the plan.
+
+---
+
+## Phase 9 — Frontend Scaffold + Auth Pages · CC · 2026-07-13
+Commit range: 6095bfb..d912ea0 (includes `a1f6574`, this session's Phase 8 HANDOFF entry, written first)
+
+### What I did
+- **Small backend addition first**: `GET /api/auth/me` (`requireAuth`, returns the public user shape).
+  `POST /auth/refresh` only ever returns a new access token by design (Phase 2's decision), so the
+  frontend had no way to repopulate `name`/`email`/`role` after a silent refresh on page load without
+  this. Added `authService.getUserById`, wired the route, added 2 backend tests
+  (`tests/routes/auth.routes.test.js`: happy path + 401-when-unauthenticated). Full rationale in
+  `DECISIONS.md` under "Frontend session restore."
+- `frontend/src/api/client.js`: axios instance, `withCredentials: true` (so the httpOnly refresh cookie
+  rides along automatically). Access token held in a module-level variable (**not** localStorage — same
+  XSS-avoidance reasoning as the refresh-token cookie). Request interceptor attaches
+  `Authorization: Bearer`. Response interceptor: on a single `401` (guarded by `config._retried` so it
+  can't loop), attempts one `POST /auth/refresh` — concurrent 401s share one in-flight refresh via a
+  module-level `refreshPromise` rather than firing N parallel refreshes — then retries the original
+  request once. `frontend/src/api/auth.js`: thin wrappers (`register`, `login`, `refresh`, `logout`, `me`).
+- `frontend/src/context/AuthContext.jsx`: `AuthProvider` + `useAuth()`. On mount: `refresh()` then `me()`
+  to restore a session across a hard reload; `status` is `"loading" | "signed-in" | "signed-out"` so
+  `ProtectedRoute` can tell "haven't checked yet" apart from "checked, no session" and avoid a
+  redirect-flash on reload of an actually-valid session.
+- `frontend/src/components/ProtectedRoute.jsx`: gates a route subtree on `status`, optionally further
+  restricted by `roles` (redirects non-matching roles to `/` rather than erroring).
+- `frontend/src/components/Navbar.jsx` + `Layout.jsx`: shared nav (login/register links when signed out,
+  dashboard link + name + logout when signed in), wraps all routes via a layout `<Route>`.
+- `frontend/src/pages/{LoginPage,RegisterPage}.jsx`: forms with client-side required/minLength
+  validation, error display from the API's error shape, redirect to the role-appropriate dashboard on
+  success.
+- `frontend/src/pages/{PosterDashboardPage,ApplicantDashboardPage}.jsx`: placeholder shells behind
+  `ProtectedRoute` — real content is Phase 11/12's job, per the plan.
+- `frontend/src/App.jsx`/`main.jsx`: routes wired (`/`, `/login`, `/register`, `/poster`, `/applicant`),
+  `AuthProvider` wraps `App` inside `BrowserRouter`.
+- **Verified live, not just built**: booted a standalone `mongodb-memory-server` + backend + `vite dev`
+  and curled through the actual Vite proxy (not a mocked fetch) — register → `/me` round trip, and
+  `/auth/refresh` both with a valid cookie (succeeds) and with none (401, matching what `AuthContext`'s
+  catch branch expects). This is the same request path the real browser app would take. Scratch mongod
+  script deleted afterward, not part of the repo.
+
+### Diff check against previous entry
+- Confirmed: `git diff 5e5478f..6095bfb --stat` (Phase 8's actual diff) matched the Phase 8 HANDOFF entry.
+
+### Decisions made (already in DECISIONS.md)
+- `/api/auth/me` addition and its rationale.
+- Frontend auth-state architecture (in-memory access token, single-retry refresh interceptor, shared
+  in-flight refresh promise).
+
+### Open questions / blockers for the next agent
+- None blocking. Phase 10 (Browse/Search/Filter Page) is next, also CC. It replaces the placeholder
+  `HomePage` in `App.jsx` and should call `GET /api/listings` (Phase 5's API: `?search&tags&location&
+  status&cursor&limit`, response shape `{ items, nextCursor }`) — this is a **public** page, no auth
+  needed, so it doesn't go through `ProtectedRoute`.
+- `oxlint` (the frontend linter, different from the backend's ESLint) flags one benign warning on
+  `AuthContext.jsx` about fast-refresh and mixed component/hook exports — this is a standard React context
+  file pattern, not a real issue, left as-is.
+- Dashboard placeholders exist at `/poster` and `/applicant` now — Phase 11/12 replace their bodies,
+  routes/guards don't need to change.
+
+### Exit criteria met?
+- Yes. A poster and an applicant can each register/login (verified live through the proxy) and land on
+  a role-appropriate dashboard shell (`/poster` or `/applicant`, redirect-on-role-mismatch and
+  redirect-to-`/login`-when-signed-out both wired via `ProtectedRoute`). Backend still 98/98 (2 new
+  `/me` tests). Frontend builds and lints clean.
