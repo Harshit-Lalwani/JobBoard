@@ -42,8 +42,8 @@ export async function deleteListing(req, res, next) {
 
 export async function listListings(req, res, next) {
   try {
-    const listings = await listingService.listListings();
-    res.json(listings);
+    const { items, nextCursor } = await listingService.listListings(req.query);
+    res.json({ items, nextCursor });
   } catch (err) {
     next(err);
   }

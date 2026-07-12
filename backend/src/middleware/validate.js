@@ -13,3 +13,17 @@ export function validateBody(schema) {
     next();
   };
 }
+
+/** Validates req.query against a zod schema, replacing it with the parsed value. */
+export function validateQuery(schema) {
+  return (req, res, next) => {
+    const result = schema.safeParse(req.query);
+    if (!result.success) {
+      return next(
+        new ApiError(400, "Validation failed", result.error.flatten().fieldErrors)
+      );
+    }
+    req.query = result.data;
+    next();
+  };
+}

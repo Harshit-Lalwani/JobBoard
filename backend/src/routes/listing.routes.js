@@ -1,13 +1,14 @@
 import { Router } from "express";
 import * as listingController from "../controllers/listing.controller.js";
-import { validateBody } from "../middleware/validate.js";
+import { validateBody, validateQuery } from "../middleware/validate.js";
 import { createListingSchema, updateListingSchema } from "../validation/listing.schema.js";
+import { listingsQuerySchema } from "../validation/listing-query.schema.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
 
-// Public list (anyone can browse)
-router.get("/", listingController.listListings);
+// Public list with search/filter/pagination (anyone can browse)
+router.get("/", validateQuery(listingsQuerySchema), listingController.listListings);
 
 // Public get (anyone can view details)
 router.get("/:id", listingController.getListing);

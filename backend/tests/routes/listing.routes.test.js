@@ -38,10 +38,11 @@ describe("GET /api/listings", () => {
   it("returns an empty list initially", async () => {
     const res = await request(app).get("/api/listings");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.items).toEqual([]);
+    expect(res.body.nextCursor).toBeNull();
   });
 
-  it("returns open listings only", async () => {
+  it("returns open listings only with pagination", async () => {
     const posterToken = await registerAndGetToken(posterData);
     await request(app)
       .post("/api/listings")
@@ -50,8 +51,89 @@ describe("GET /api/listings", () => {
 
     const res = await request(app).get("/api/listings");
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].title).toBe(listingData.title);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].title).toBe(listingData.title);
+    expect(res.body.nextCursor).toBeNull();
+  });
+
+  it("filters by tags", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ ...listingData, tags: ["node", "python"] });
+
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ ...listingData, title: "Junior Python Dev", tags: ["python", "django"] });
+
+    const res = await request(app).get("/api/listings?tags=node");
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].title).toBe(listingData.title);
+  });
+
+  it("filters by location", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send(listingData);
+
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ ...listingData, title: "NYC Engineer", location: "New York" });
+
+    const res = await request(app).get("/api/listings?location=Remote");
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].location).toBe("Remote");
+  });
+
+  it("searches by text (title/description)", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send(listingData);
+
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ ...listingData, title: "Frontend Designer", description: "Design UIs" });
+
+    const res = await request(app).get("/api/listings?search=scalable");
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].description).toContain("scalable");
+  });
+
+  it("paginates with cursor", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+
+    // Create 3 listings
+    for (let i = 0; i < 3; i++) {
+      await request(app)
+        .post("/api/listings")
+        .set("Authorization", `Bearer ${posterToken}`)
+        .send({ ...listingData, title: `Listing ${i}` });
+      // Small delay to ensure different timestamps
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    // First page (limit 2)
+    const res1 = await request(app).get("/api/listings?limit=2");
+    expect(res1.status).toBe(200);
+    expect(res1.body.items).toHaveLength(2);
+    expect(res1.body.nextCursor).toBeDefined();
+
+    // Second page using cursor
+    const res2 = await request(app).get(`/api/listings?limit=2&cursor=${res1.body.nextCursor}`);
+    expect(res2.status).toBe(200);
+    expect(res2.body.items).toHaveLength(1);
+    expect(res2.body.nextCursor).toBeNull();
   });
 });
 

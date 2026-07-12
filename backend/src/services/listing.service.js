@@ -1,5 +1,6 @@
 import { Listing } from "../models/Listing.js";
 import { ApiError } from "../middleware/errorHandler.js";
+import { encodeCursor, decodeCursor } from "../utils/cursor.js";
 
 export async function createListing(posterId, data) {
   const listing = await Listing.create({
@@ -43,10 +44,51 @@ export async function deleteListing(id, posterId) {
   await Listing.deleteOne({ _id: id });
 }
 
-export async function listListings() {
-  const listings = await Listing.find({ status: "open" }).populate(
-    "posterId",
-    "name email"
-  );
-  return listings;
+export async function listListings(query) {
+  const { search, tags, location, status = "open", cursor, limit } = query;
+
+  // Build MongoDB query
+  const match = { status };
+
+  // Text search: use the text index if a search string is provided
+  if (search) {
+    match.$text = { $search: search };
+  }
+
+  // Filter by tags (multikey $in since tags is an array)
+  if (tags && tags.length > 0) {
+    match.tags = { $in: tags };
+  }
+
+  // Filter by location (exact match)
+  if (location) {
+    match.location = location;
+  }
+
+  // Cursor pagination: if cursor is provided, only return items after this cursor
+  if (cursor) {
+    const decodedCursor = decodeCursor(cursor);
+    if (decodedCursor) {
+      match.$or = [
+        { createdAt: { $lt: decodedCursor.createdAt } },
+        {
+          createdAt: decodedCursor.createdAt,
+          _id: { $lt: decodedCursor._id },
+        },
+      ];
+    }
+  }
+
+  // Query with the indexes backing the filters and sort
+  const listings = await Listing.find(match)
+    .populate("posterId", "name email")
+    .sort({ createdAt: -1, _id: -1 })
+    .limit(limit + 1); // Fetch one extra to know if there's a next page
+
+  // Determine if there's a next page and build the response
+  const hasNextPage = listings.length > limit;
+  const items = hasNextPage ? listings.slice(0, limit) : listings;
+  const nextCursor = hasNextPage ? encodeCursor(items[items.length - 1]) : null;
+
+  return { items, nextCursor };
 }
