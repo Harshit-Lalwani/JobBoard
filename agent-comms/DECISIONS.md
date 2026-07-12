@@ -51,3 +51,32 @@ one to be able to articulate in an interview.
 detect reuse of an old token as a theft signal) — stronger security posture, more implementation
 complexity (needs a token table/versioning); noted as the natural "if I had more time" upgrade. Refresh
 token in response body / localStorage — rejected outright due to XSS exposure.
+
+## Index design on Listing — decided in Phase 1 by CC
+**Decision:** Three indexes on `Listing`: (1) a weighted **text index** on `{title, description}`
+(`title` weight 5, `description` weight 1) named `listing_text_search`; (2) a **compound index** on
+`{tags: 1, location: 1, status: 1}` named `listing_filter_compound`; (3) a compound index on
+`{createdAt: -1, _id: -1}` named `listing_cursor_pagination`.
+**Why:** MongoDB only allows one text index per collection, so title/description search has to share one
+index — weighting title higher reflects that a title match is a stronger relevance signal than a body
+match, which is worth being able to explain (`$text` scoring uses these weights). The filter compound
+index's field order (`tags`, `location`, `status`) follows the equality-then-selectivity heuristic:
+`tags` is an array field queried with `$in`/multikey equality and is usually the most selective filter in
+practice, `status` is a low-cardinality field (`open`/`closed`) best left last so it doesn't fragment the
+index for little selectivity gain. The pagination index exists separately because the [[pagination
+strategy — decided in Phase 0 by CC]] cursor needs an index that matches its sort+tiebreak exactly
+(`createdAt` descending, `_id` descending as the tiebreaker for equal timestamps) — reusing the filter
+compound index for that would force a mixed-direction sort MongoDB can't serve from one index.
+**Alternatives considered:** A single index covering everything (filters + text + sort) — not possible,
+since MongoDB text indexes can't be combined with other keys as compound sort indexes the way this needs.
+Letting the filter compound index also serve pagination by appending `createdAt` to it — rejected because
+filtered *and* unfiltered browse (no tags/location/status) both need fast pagination, and an index led by
+`tags`/`location`/`status` doesn't help an unfiltered query at all.
+
+## Application uniqueness — decided in Phase 1 by CC
+**Decision:** Unique compound index on `Application` at `{listingId: 1, applicantId: 1}`.
+**Why:** Enforces "one application per applicant per listing" at the database layer rather than only in
+application code, so it holds even under concurrent requests (e.g. a double-submit from a slow network).
+**Alternatives considered:** Checking for an existing application in the service layer before insert —
+race-prone under concurrency without the DB-level constraint backing it up; kept as a defense-in-depth
+check in Phase 4, not a replacement for the index.
