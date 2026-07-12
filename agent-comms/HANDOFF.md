@@ -638,3 +638,59 @@ Commit range: 9743f86..bb8372f (includes `6a88894`, this session's Phase 10 HAND
 - Yes (per `PLAN.md`: "Manage-listings view (CRUD) + pipeline board to view/move applicants through
   statuses"). Verified live through the proxy including the illegal-transition-still-rejected case, not
   just the happy path. Backend 101/101, frontend builds and lints clean.
+
+---
+
+## Phase 12 — Applicant Dashboard · CC · 2026-07-13
+Commit range: bb8372f..ee9b263 (includes `1361ea9`, this session's Phase 11 HANDOFF entry, written first)
+
+### What I did
+- **Small backend addition first** (flagged as needed in the Phase 11 entry above): `GET
+  /api/applications/mine` (applicant-only), returns every application the current applicant has made
+  across all listings, `listingId` populated with `title`/`location`/`status`, newest first, no
+  pagination. Added `getApplicationsForApplicant` to the service, wired controller + route — registered
+  before `/:applicationId` for the same route-ordering reason as `/listings/mine` in Phase 11. 3 new
+  tests: happy path (2 applications across 2 listings, confirms a *different* applicant's application to
+  one of the same listings isn't included), 401, 403-for-posters. Backend now 104/104.
+- `frontend/src/components/StatusBadge.jsx`: color-coded pill per status (gray/blue/amber/green/red for
+  applied/shortlisted/interview/offer/rejected). Minor note: this hardcodes its own label/color maps
+  rather than importing `APPLICATION_STATUSES` from `utils/statusMachine.js` as the Phase 11 entry
+  suggested — it only needed per-status lookup objects, not the array itself, so there was nothing to
+  import; not a real inconsistency, just flagging since I'd flagged the opposite expectation.
+- `frontend/src/api/applications.js`: added `getMyApplications()`.
+- `frontend/src/pages/ApplicantDashboardPage.jsx` — **replaces the Phase 9 placeholder**: loads
+  `GET /applications/mine` on mount, one card per application (listing title linking to
+  `/listings/:id`, location, `StatusBadge`, and a chronological `statusHistory` timeline rendered
+  straight from the Application document — no new backend work needed for the timeline itself, that data
+  has existed since Phase 4, Phase 12 just surfaces it).
+- **Verified live** (same pattern as Phases 9-11): applied to two listings as one applicant, moved one
+  application through `applied → shortlisted → interview` as the poster, then confirmed
+  `/applications/mine` returns both applications with the full `statusHistory` array intact on the one
+  that was moved and listing details populated on both — exactly the shape `ApplicantDashboardPage`
+  consumes. Scratch mongod script deleted afterward. Process cleanup this time worked correctly via
+  `kill -9` on PIDs gathered with `ps aux | awk` — no leftover processes.
+
+### Diff check against previous entry
+- Confirmed: `git diff bb8372f..1361ea9` was the Phase 11 HANDOFF entry (already reviewed as accurate in
+  that same session, so this is a formality — no code changes to check, that commit is docs-only).
+
+### Decisions made (already in DECISIONS.md)
+- `GET /api/applications/mine` as a separate applicant-scoped endpoint, mirroring the `/listings/mine`
+  reasoning from Phase 11.
+
+### Open questions / blockers for the next agent
+- None blocking. **All 13 phases in `PLAN.md` are now implemented.** Phase 13 (Integration Pass, README,
+  Interview Prep) is next and last, also CC: read every `HANDOFF.md` entry (this file, top to bottom) and
+  the full diff from Phase 0's first commit to `HEAD`, reconcile any inconsistencies, write the final
+  `README.md`, and consolidate `DECISIONS.md` into an interview-prep section.
+- Known minor items for Phase 13 to consider (not blockers, just things a reconciliation pass might want
+  to note or clean up): (1) `ListingDetailPage` was built in Phase 10 rather than its own phase, already
+  flagged then; (2) the frontend statusMachine duplication's drift risk (Phase 11) is worth a callout in
+  the README's "known tradeoffs" section, not just `DECISIONS.md`; (3) no `.env` file exists for the
+  frontend (it doesn't need one — the Vite proxy handles the backend URL — but worth confirming the README
+  setup instructions don't imply one is needed).
+
+### Exit criteria met?
+- Yes (per `PLAN.md`: "'My applications' list + per-application status view"). Verified live through the
+  proxy with real status transitions and a real multi-application history, not just the empty/happy-path
+  shell. Backend 104/104, frontend builds and lints clean.

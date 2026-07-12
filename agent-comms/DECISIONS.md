@@ -183,3 +183,18 @@ transition table via a shared package/module between frontend and backend — wo
 cleanly in a monorepo with a shared package, but this project's frontend/backend aren't set up as
 workspaces with shared internal packages, so it would be a bigger structural change than this decision
 warrants for a 5-entry table.
+
+## Applicant-only "my applications" endpoint — decided in Phase 12 by CC
+**Decision:** Added `GET /api/applications/mine` (applicant-only), returning all of the requesting
+applicant's own applications across every listing they've applied to, with `listingId` populated
+(title/location/status) and no pagination.
+**Why:** Same shape of gap as Phase 11's `/listings/mine`: the existing application-listing endpoints are
+either poster-scoped to one listing (`GET /applications/listing/:listingId`) or need the application id
+already known (`GET /applications/:applicationId`) — nothing let an applicant ask "show me everything I've
+applied to." A dedicated route keeps the applicant's own-data query separate from the poster-facing
+per-listing one rather than overloading either. No pagination for the same reason as `/listings/mine`: an
+individual applicant's own application count is small and bounded, this isn't the kind of open-ended
+catalog Phase 5's cursor pagination exists for.
+**Alternatives considered:** Client-side aggregation from per-listing calls — would require the applicant
+to already know every listing id they'd applied to (they don't, that's the whole problem), so not
+actually viable, not just suboptimal.
