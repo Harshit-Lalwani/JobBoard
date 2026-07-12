@@ -1,44 +1,174 @@
 # Job Board — MERN Application Pipeline
 
-A mini-ATS: posters create job/task listings, applicants apply, and posters move applicants through a
-pipeline (`applied → shortlisted → interview → offer/rejected`).
+A mini-ATS: **posters** create job/task listings, **applicants** browse and apply, and posters move
+applicants through a pipeline — `applied → shortlisted → interview → offer` (or `rejected` from any
+non-terminal stage). Built as a portfolio project to demonstrate REST API design, MongoDB schema/index
+design, and a clean React frontend architecture.
 
-Full spec: [`Initial_prompt.md`](Initial_prompt.md).
-Build plan and multi-agent coordination: [`agent-comms/PLAN.md`](agent-comms/PLAN.md).
-
-> This README is a Phase 0 stub. It will be expanded in the final phase with full setup instructions and
-> an architecture/design-decisions summary (interview prep). See
-> [`agent-comms/DECISIONS.md`](agent-comms/DECISIONS.md) for the running design-decision log in the
-> meantime.
-
-## Status
-
-Phase 0 complete: repo scaffolding only (empty backend + frontend shells). No auth, models, or business
-logic yet — see `agent-comms/PLAN.md` for what's next.
+Full original spec: [`Initial_prompt.md`](Initial_prompt.md).
 
 ## Stack
 
-- **Backend:** Node.js + Express, MongoDB/Mongoose, JWT auth, multer for uploads
-- **Frontend:** React (Vite), React Router, Tailwind CSS, Axios
-- **Tests:** Jest + Supertest
+- **Backend:** Node.js + Express, MongoDB + Mongoose, JWT auth (access + refresh), bcrypt, multer
+- **Frontend:** React (Vite), React Router, Tailwind CSS v4, Axios
+- **Tests:** Jest + Supertest (backend only — 108 tests, see [Testing](#testing))
 
-## Running locally (current scaffold)
+## Setup
 
-Backend:
+Requires Node 18+ and a MongoDB instance (local `mongod`, Docker, or a free Atlas cluster — anything
+reachable via a connection string).
 
-```
+**Backend**
+
+```bash
 cd backend
-cp .env.example .env
+cp .env.example .env        # edit MONGO_URI if not using the default local mongod
 npm install
-npm run dev        # http://localhost:4000/health
+npm run dev                 # http://localhost:4000 — GET /health should return {"status":"ok"}
 ```
 
-Frontend:
+**Frontend** (separate terminal)
 
-```
+```bash
 cd frontend
 npm install
-npm run dev         # http://localhost:5173, proxies /api to the backend
+npm run dev                 # http://localhost:5173 — proxies /api and /uploads to the backend
 ```
 
-MongoDB is not required yet (no models/DB connection wired up until Phase 1).
+Open `http://localhost:5173`, register as a poster in one browser tab and an applicant in another (or
+log out/in between) to try the full flow: post a listing → browse/search for it → apply with a resume
+PDF → move the application through the pipeline.
+
+## Testing
+
+```bash
+cd backend
+npm test        # Jest + Supertest, runs against an ephemeral in-memory MongoDB (mongodb-memory-server) —
+                 # no real database needed to run the suite
+npm run lint
+```
+
+```bash
+cd frontend
+npm run build    # also serves as a compile-correctness check
+npm run lint
+```
+
+## Project structure
+
+```
+backend/
+  src/
+    routes/        Express routers — thin, just wire middleware + call a controller
+    controllers/    req/res handling only; calls a service, maps the result to a response
+    services/       actual business logic; throws ApiError, never touches req/res
+    models/         Mongoose schemas + indexes
+    middleware/      auth (JWT/RBAC), validation (zod), rate limiting, upload (multer), error handling
+    validation/     zod schemas
+    utils/          status-transition state machine, cursor encode/decode, JWT helpers, etc.
+  tests/            mirrors src/, one test file per route group + targeted unit tests
+
+frontend/
+  src/
+    api/            one thin wrapper module per backend resource (axios calls only)
+    context/        AuthContext — session state, silent-refresh-on-load
+    components/     shared UI (Navbar, ProtectedRoute, PipelineBoard, forms, cards)
+    pages/          one component per route
+    utils/          frontend copy of the status-transition graph (UI-only, see below)
+
+agent-comms/        the phase-wise build plan and its full decision/handoff history (see below)
+```
+
+## API overview
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/api/auth/register` `/login` | — | issues access token + refresh cookie |
+| POST | `/api/auth/refresh` | refresh cookie | new access token |
+| POST | `/api/auth/logout` | required | revokes the refresh token |
+| GET | `/api/auth/me` | required | current user (for session restore) |
+| GET | `/api/listings` | — | search/filter/paginate, see below |
+| GET | `/api/listings/mine` | poster | all of *your* listings, any status |
+| GET/POST/PUT/DELETE | `/api/listings/:id` | poster for write | |
+| POST | `/api/applications/:listingId/apply` | applicant | rate-limited |
+| GET | `/api/applications/mine` | applicant | all of *your* applications |
+| GET | `/api/applications/listing/:listingId` | poster | applicants for one of your listings |
+| PUT | `/api/applications/:id/status` | poster | enforces the transition state machine |
+| POST | `/api/uploads/resume` | required | multipart PDF upload |
+
+`GET /api/listings` query params: `search` (text index), `tags`, `location`, `status` (default `open`),
+`cursor`, `limit`.
+
+## Architecture & design decisions (interview prep)
+
+The full decision log with alternatives-considered is in
+[`agent-comms/DECISIONS.md`](agent-comms/DECISIONS.md) — every entry below links back to a fuller writeup
+there. This section is the condensed version for talking through in an interview.
+
+**Cursor-based pagination, not `skip()`/`limit()`.** `GET /api/listings` takes an opaque
+`cursor` (base64 of the last item's `{createdAt, _id}`) instead of a page number. `skip()` makes MongoDB
+walk and discard every skipped document — cost grows linearly with page depth. A cursor turns "next page"
+into an indexed range query (`createdAt < cursor.createdAt`, with `_id` as a tiebreaker for equal
+timestamps), so it's O(page size) no matter how deep you've paged. The tradeoff: no "jump to page 7" UI —
+the browse page reflects this honestly with a "Load more" button rather than numbered pages, since a
+cursor genuinely can't support arbitrary jumps.
+
+**Index design on `Listing`.** Three indexes, each earning its keep: a weighted text index on
+`{title: 5, description: 1}` (title matches rank above body matches in `$text` search — MongoDB allows
+only one text index per collection, so title/description have to share it, hence the weighting); a
+compound index on `{tags: 1, location: 1, status: 1}` ordered by expected selectivity (tags, an
+array field queried with `$in`, is usually most selective; low-cardinality `status` goes last since it
+barely narrows the index); and a separate `{createdAt: -1, _id: -1}` index dedicated to cursor
+pagination — kept separate from the filter index because unfiltered browsing needs fast pagination too,
+and an index led by `tags`/`location`/`status` wouldn't help a query with no filters at all.
+
+**Status-transition state machine.** The legal pipeline graph
+(`applied → shortlisted → interview → offer`, `rejected` reachable from any non-terminal state and
+terminal itself) lives in one place — `backend/src/utils/statusMachine.js` — as an explicit adjacency
+list, not scattered `if/else` checks in a controller. `PUT /applications/:id/status` calls
+`isLegalTransition(from, to)` before writing anything, and every legal transition appends to
+`statusHistory[]` for a full audit trail. Directly unit-tested in isolation (25 test cases covering every
+legal edge, every illegal edge, no-op self-transitions, and unknown-status inputs) in addition to being
+exercised through the real HTTP routes.
+
+**Refresh tokens: signed JWT + server-side revocation, not stateless.** The refresh token in the
+httpOnly cookie is itself a JWT (`sub: userId`, long TTL, separate secret from the access token) — but its
+bcrypt hash is *also* stored on the `User` document. `/auth/refresh` verifies the JWT signature first
+(cheap, no DB hit to identify the user), then compares the raw token against the stored hash before
+issuing a new access token. This is what makes `/auth/logout` actually work: it clears the stored hash, so
+a stolen-but-unexpired refresh token is rejected on its next use even though its signature still verifies.
+Deliberately *not* rotating the refresh token on each use (simpler to reason about, at the cost of a
+stolen token staying valid until logout/expiry rather than being invalidated on next legitimate use) — a
+real tradeoff, not an oversight.
+
+**Rate limiting: in-memory, keyed by user id.** `POST /applications/:listingId/apply` is limited to 5
+requests/minute per authenticated user (not per IP — IP-based limiting is trivially routed around and
+false-positives on shared/NAT'd IPs). Redis-backed limiting was considered and explicitly deferred (see
+below) — in-memory is a real limitation (doesn't survive a restart, doesn't work across multiple backend
+instances) but proportionate for this project's scope.
+
+**Resume upload: storage isolated behind one function.** `multer.memoryStorage()` only parses the
+multipart request into a buffer; a separate `storage.service.js` (`saveFile(file) -> url`) is the *only*
+code that knows files currently land on local disk. Swapping to S3 later means changing that one
+function's body (buffer → `PutObjectCommand`, return the S3 URL) — the upload route/controller and
+`fileFilter`/size-limit validation don't change at all.
+
+**Known, explicit tradeoffs (not oversights):**
+- **Redis caching — deferred, not built.** The spec listed it as optional; skipped for scope reasons.
+  The design (cache hot listings by id, invalidate on that listing's `PUT`) is still fully describable,
+  just not implemented — see the Phase 0 entry in `DECISIONS.md`.
+- **Frontend duplicates the status-transition graph.** `frontend/src/utils/statusMachine.js` is a second,
+  hand-kept-in-sync copy of the backend's transition table, used only to decide which "move to X" buttons
+  the pipeline board shows. The backend independently re-validates every transition regardless, so a
+  drifted frontend copy would only ever cause a confusing UI (showing/hiding the wrong buttons), never a
+  security or data-integrity issue — but it is a real duplication, called out explicitly in both files'
+  comments rather than hidden.
+- **In-memory rate limiter**, as above — doesn't scale past one backend process.
+
+## Build process
+
+This was built iteratively, phase by phase, with each phase's rationale and a full commit-by-commit
+handoff log preserved in `agent-comms/`:
+- [`PLAN.md`](agent-comms/PLAN.md) — the phase-wise roadmap
+- [`HANDOFF.md`](agent-comms/HANDOFF.md) — what each phase actually did, verified, and found
+- [`DECISIONS.md`](agent-comms/DECISIONS.md) — every design decision with alternatives considered
