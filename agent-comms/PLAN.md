@@ -19,6 +19,13 @@ Agent key:
 - **OC** = opencode (open-source model via NVIDIA NIM) — mechanical, narrowly-specified work with an
   existing pattern to copy. Keep OC's tasks small and unambiguous; don't hand it open-ended design calls.
 
+> **2026-07-13 update:** the user has decided all remaining phases (6 onward) will be executed by
+> Claude Code, not handed to GA/OC. The original GA/OC labels below are left as-is for the historical
+> record of the original plan, but `HANDOFF.md` entries from Phase 6 onward should be attributed to CC
+> regardless of what's written in this file's phase headers. Caching (previously bundled into Phase 6)
+> has been split out into an **Optional / Deferred** section at the end — the user will decide later
+> whether it's worth doing at all.
+
 ---
 
 ## Phase 0 — Architecture & Scaffolding · **CC**
@@ -68,38 +75,35 @@ Agent key:
 - **Exit criteria:** `GET /listings?...` supports search + filters + cursor pagination together;
   `.explain()` output or index usage noted in `DECISIONS.md` for interview reference.
 
-## Phase 6 — Rate Limiting & Caching · **GA**
-- Rate limiting on the apply endpoint (in-memory limiter unless `DECISIONS.md` from Phase 0 says Redis is
-  in scope).
-- If Redis caching is in scope: cache hot/most-viewed listings, explicit invalidation on listing update.
-- **Exit criteria:** apply endpoint returns 429 under burst load in a test; cache invalidation covered by
-  a test if caching was implemented.
+## Phase 6 — Rate Limiting on the apply endpoint · **CC**
+- In-memory rate limiter on `POST /api/applications/:listingId/apply` (Redis was ruled out in Phase 0).
+- **Exit criteria:** apply endpoint returns 429 under burst load, covered by a test.
+- Caching (previously bundled here) moved to **Optional / Deferred** at the end of this file.
 
-## Phase 7 — CRUD/Filter Tests · **OC**
+## Phase 7 — CRUD/Filter Tests · **CC**
 - Supertest coverage for Listings CRUD (Phase 3) and search/filter/pagination (Phase 5) happy paths +
-  obvious edge cases (bad query params, unauthorized writes).
-- Do not touch auth or status-transition test files — those are CC's in Phase 8.
+  obvious edge cases (bad query params, unauthorized writes) not already covered by Phases 3/5's own tests.
 
 ## Phase 8 — Business-Logic Tests · **CC**
 - Focused Jest/Supertest coverage for the status-transition state machine and auth/RBAC middleware —
-  the two things listed explicitly in the spec as must-test.
+  the two things listed explicitly in the spec as must-test. (Largely already covered by Phases 2 and 4's
+  tests — this phase is a targeted gap-check, not a rewrite.)
 - **Exit criteria:** all backend tests green; this closes out the backend.
 
-## Phase 9 — Frontend Scaffold + Auth Pages · **GA**
+## Phase 9 — Frontend Scaffold + Auth Pages · **CC**
 - Vite + React Router + Tailwind setup, API client wrapper (fetch/axios) with token refresh handling,
   login/register pages, protected-route wrapper.
 - **Exit criteria:** a poster and an applicant can each register/login and land on a role-appropriate
   empty dashboard shell.
 
-## Phase 10 — Browse/Search/Filter Page · **GA**
+## Phase 10 — Browse/Search/Filter Page · **CC**
 - Public listing browse page: search box, tag/location filters, pagination controls wired to Phase 5's API.
 
-## Phase 11 — Poster Dashboard · **GA**
+## Phase 11 — Poster Dashboard · **CC**
 - Manage-listings view (CRUD) + pipeline board to view/move applicants through statuses, calling Phase 4's
-  status-update endpoint. This is the flagship interactive screen — CC reviews the diff before it's
-  considered done (leave a note in `HANDOFF.md` asking for review).
+  status-update endpoint. This is the flagship interactive screen.
 
-## Phase 12 — Applicant Dashboard · **OC**
+## Phase 12 — Applicant Dashboard · **CC**
 - "My applications" list + per-application status view. Reuse the table/list components and API client
   patterns already established in Phases 10–11; no new architecture.
 
@@ -108,7 +112,16 @@ Agent key:
   inconsistencies (error shapes, naming, unused code).
 - Write final `README.md`: setup instructions + architecture summary.
 - Consolidate `DECISIONS.md` into the interview-prep section of the README (indexing, pagination,
-  status-transition validation, rate limiting/caching tradeoffs).
+  status-transition validation, rate limiting tradeoffs).
+
+---
+
+## Optional / Deferred — Redis Caching on hot listings
+- Not scheduled. Phase 0 decided against Redis for scope reasons (see `DECISIONS.md`), but the spec
+  calls it out as an optional stretch goal, so it's kept here rather than dropped outright.
+- If revisited: cache hot/most-viewed listings, explicit invalidation on listing update, and a note in
+  `DECISIONS.md` on the invalidation strategy chosen.
+- The user will decide later whether this is worth doing; do not start it without that go-ahead.
 
 ---
 
