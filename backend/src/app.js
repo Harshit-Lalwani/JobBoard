@@ -7,6 +7,7 @@ import { env } from "./config/env.js";
 import healthRoutes from "./routes/health.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import listingRoutes from "./routes/listing.routes.js";
+import applicationRoutes from "./routes/application.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 
 export function createApp() {
@@ -20,8 +21,9 @@ export function createApp() {
   app.use(healthRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/listings", listingRoutes);
+  app.use("/api/applications", applicationRoutes);
 
-  // Phase 4+ will mount /api/applications here.
+  // All API routes are mounted.
 
   app.use(notFoundHandler);
   app.use(errorHandler);
