@@ -110,6 +110,59 @@ describe("GET /api/listings", () => {
     expect(res.body.items[0].description).toContain("scalable");
   });
 
+  it("excludes closed listings from the default browse", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    const createRes = await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send(listingData);
+
+    await request(app)
+      .put(`/api/listings/${createRes.body._id}`)
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ status: "closed" });
+
+    const res = await request(app).get("/api/listings");
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(0);
+  });
+
+  it("combines tags, location, and status filters together", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    // Matches all filters
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ ...listingData, tags: ["node"], location: "Remote" });
+
+    // Right tag, wrong location
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ ...listingData, title: "Wrong Location", tags: ["node"], location: "Onsite" });
+
+    // Wrong tag, right location
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ ...listingData, title: "Wrong Tag", tags: ["python"], location: "Remote" });
+
+    const res = await request(app).get("/api/listings?tags=node&location=Remote&status=open");
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].title).toBe(listingData.title);
+  });
+
+  it("rejects an out-of-range limit with 400", async () => {
+    const res = await request(app).get("/api/listings?limit=500");
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an invalid status filter with 400", async () => {
+    const res = await request(app).get("/api/listings?status=archived");
+    expect(res.status).toBe(400);
+  });
+
   it("paginates with cursor", async () => {
     const posterToken = await registerAndGetToken(posterData);
 
@@ -195,6 +248,11 @@ describe("GET /api/listings/:id", () => {
   it("returns 404 for nonexistent listing", async () => {
     const res = await request(app).get("/api/listings/507f1f77bcf86cd799439011");
     expect(res.status).toBe(404);
+  });
+
+  it("returns 400 (not 500) for a malformed id", async () => {
+    const res = await request(app).get("/api/listings/not-a-valid-id");
+    expect(res.status).toBe(400);
   });
 });
 

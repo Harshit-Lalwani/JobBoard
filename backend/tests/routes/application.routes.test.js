@@ -365,4 +365,13 @@ describe("GET /api/applications/:applicationId", () => {
 
     expect(res.status).toBe(404);
   });
+
+  it("returns 400 (not 500) for a malformed id", async () => {
+    const token = await registerAndGetToken(posterData);
+    const res = await request(app)
+      .get("/api/applications/not-a-valid-id")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+  });
 });

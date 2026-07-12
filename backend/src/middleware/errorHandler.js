@@ -13,6 +13,13 @@ export function notFoundHandler(req, res, next) {
 
 // eslint-disable-next-line no-unused-vars
 export function errorHandler(err, req, res, next) {
+  // Mongoose throws a CastError (not an ApiError) when a route param like :id isn't a valid
+  // ObjectId — e.g. GET /api/listings/not-a-real-id. Without this, it would fall through to the
+  // generic 500 branch below, which is wrong: it's a malformed client request, not a server fault.
+  if (err.name === "CastError") {
+    return res.status(400).json({ error: { message: `Invalid id: ${err.value}` } });
+  }
+
   const statusCode = err.statusCode || 500;
   const body = {
     error: {
