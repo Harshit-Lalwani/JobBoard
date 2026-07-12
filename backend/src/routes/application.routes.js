@@ -6,6 +6,7 @@ import {
   updateApplicationStatusSchema,
 } from "../validation/application.schema.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { applyRateLimiter } from "../middleware/rateLimit.js";
 
 const router = Router();
 
@@ -14,6 +15,7 @@ router.post(
   "/:listingId/apply",
   requireAuth,
   requireRole("applicant"),
+  applyRateLimiter,
   validateBody(applySchema),
   applicationController.apply
 );
