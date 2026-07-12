@@ -316,3 +316,51 @@ Commit range: 55b9155..6198b05
   path (next cursor correctly set/unset), search across title and description, filtering by tags and
   location, and combinations thereof, via Supertest. API now supports the full spec browsing/search
   workflow.
+
+---
+
+## Phase 6 — Rate Limiting on the apply endpoint · CC · 2026-07-13
+Commit range: 6198b05..18fce62 (includes the plan-update commit `f308620` — see note below)
+
+### What I did
+- **Plan change first:** the user decided all remaining phases (6 onward) go to Claude Code rather than
+  GA/OC, and moved Redis caching out of this phase into an "Optional / Deferred" section at the bottom of
+  `PLAN.md` — not scheduled, revisit only if the user asks. `PLAN.md` phase headers 6-12 were updated to
+  reflect this (see the 2026-07-13 note near the top of that file). This phase now covers rate limiting
+  only, no caching.
+- `src/middleware/rateLimit.js`: `applyRateLimiter` using `express-rate-limit`, 5 requests per 60s window,
+  scoped only to `POST /api/applications/:listingId/apply`. Keyed by `req.user.id` (not IP) since
+  `requireAuth` always runs before this middleware in the route chain — per-user limiting is both more
+  meaningful (an attacker can't just rotate IPs against an authenticated abuse case) and avoids
+  false-positives from users behind shared NAT/corporate IPs. Falls back to `ipKeyGenerator(req.ip)`
+  (express-rate-limit's IPv6-safe helper) for the unauthenticated case, which is dead code in practice
+  since the route always has `requireAuth` ahead of the limiter, but keeps the library's static validator
+  happy without suppressing a real warning.
+- `src/routes/application.routes.js`: inserted `applyRateLimiter` into the apply route's middleware chain,
+  after `requireAuth`/`requireRole` (so `req.user` is populated) and before body validation.
+- `tests/middleware/rateLimit.test.js`: creates 6 distinct listings so each of 6 apply calls is otherwise
+  legal (avoids the Phase 4 duplicate-application 409 confounding the result), asserts the first 5 return
+  201 and the 6th returns 429.
+- No Redis, no caching — see the plan-change note above.
+
+### Diff check against previous entry
+- Confirmed: `git diff 55b9155..27de48e --stat` (Phase 5's own check) was already verified in the prior
+  entry; `git diff 6198b05..4a594a4 --stat` (Phase 5's handoff commit) was handoff-log-only (28
+  insertions — consistent with the Phase 5 entry above).
+
+### Decisions made (to be added to DECISIONS.md in Phase 13)
+- Rate limiter keyed by authenticated user id, not IP — rationale above. Worth a line in the interview-prep
+  README alongside the Phase 0 "why no Redis" decision, since the two are related (in-memory limiter is
+  the direct consequence of the no-Redis call).
+
+### Open questions / blockers for the next agent
+- None blocking. Per the updated `PLAN.md`, Phase 7 (CRUD/Filter test gap-check) is next, also CC. Given
+  Phases 3 and 5 already shipped solid test coverage for their own endpoints, Phase 7 should be a
+  genuine gap-check (read the existing tests first, only add what's missing) rather than a rewrite.
+- This session was interrupted by the user's token-management timer right after this phase's code was
+  committed (`18fce62`) but before this HANDOFF entry was written — that's why the entry is arriving in a
+  later session. No code was left uncommitted.
+
+### Exit criteria met?
+- Yes. `npm test` → 8 suites / 62 tests all passing. `npm run lint` clean. 429 verified under a burst of
+  6 rapid apply calls against 6 distinct listings.
