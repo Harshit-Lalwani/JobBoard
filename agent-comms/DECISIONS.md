@@ -80,3 +80,21 @@ application code, so it holds even under concurrent requests (e.g. a double-subm
 **Alternatives considered:** Checking for an existing application in the service layer before insert —
 race-prone under concurrency without the DB-level constraint backing it up; kept as a defense-in-depth
 check in Phase 4, not a replacement for the index.
+
+## Refresh token implementation — decided in Phase 2 by CC
+**Decision:** The refresh token delivered in the httpOnly cookie is itself a signed JWT (`sub: userId`,
+long TTL from `REFRESH_TOKEN_TTL`, signed with a *separate* secret from the access token), and its bcrypt
+hash is stored on `User.refreshTokenHash`. `/api/auth/refresh` verifies the JWT signature+expiry first
+(cheap, no DB hit needed to identify the user), then bcrypt-compares the raw token against the stored hash
+before issuing a new access token.
+**Why:** This refines the Phase 0 "static, hashed, httpOnly-cookie" decision with a concrete mechanism.
+A purely opaque random token can't self-identify its owner, which would force either scanning all users'
+hashes (unworkable) or a second identifying cookie (more surface area). A signed JWT solves the lookup
+problem for free via its `sub` claim, while the stored-hash comparison is what makes the token *revocable*
+server-side — `/api/auth/logout` clears `refreshTokenHash`, so a stolen-but-unexpired refresh JWT is
+rejected on its next use even though its signature still verifies.
+**Alternatives considered:** Opaque random token + a separate non-httpOnly cookie just for the user id —
+rejected, adds a second cookie and a second thing to keep in sync for no real benefit over embedding the
+id in a signed token the client can't read anyway (httpOnly). Fully stateless refresh (JWT only, no DB
+hash) — rejected because it removes the ability to revoke on logout before natural expiry, which was a
+deliberate assumption in the Phase 0 decision.
