@@ -117,3 +117,21 @@ describe("POST /api/auth/logout", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("GET /api/auth/me", () => {
+  it("returns the current user for a valid access token", async () => {
+    const registerRes = await request(app).post("/api/auth/register").send(applicant);
+    const res = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${registerRes.body.accessToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.user).toMatchObject({ email: applicant.email, role: "applicant" });
+    expect(res.body.user.passwordHash).toBeUndefined();
+  });
+
+  it("requires authentication", async () => {
+    const res = await request(app).get("/api/auth/me");
+    expect(res.status).toBe(401);
+  });
+});

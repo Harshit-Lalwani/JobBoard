@@ -61,3 +61,14 @@ export async function logout(req, res, next) {
     next(err);
   }
 }
+
+// Lets the frontend restore full user info after a silent refresh, since /refresh only
+// returns a new access token (see agent-comms/DECISIONS.md on the refresh token design).
+export async function me(req, res, next) {
+  try {
+    const user = await authService.getUserById(req.user.id);
+    res.json({ user: toPublicUser(user) });
+  } catch (err) {
+    next(err);
+  }
+}

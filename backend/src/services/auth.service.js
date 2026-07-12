@@ -70,3 +70,11 @@ export async function refresh(refreshToken) {
 export async function logout(userId) {
   await User.findByIdAndUpdate(userId, { refreshTokenHash: null });
 }
+
+export async function getUserById(userId) {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new ApiError(401, "User not found");
+  }
+  return user;
+}
