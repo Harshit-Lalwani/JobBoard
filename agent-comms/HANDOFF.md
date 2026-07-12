@@ -409,3 +409,45 @@ Commit range: 18fce62..5e5478f (includes `ca17e35`, this session's Phase 6 HANDO
 
 ### Exit criteria met?
 - Yes. `npm test` → 8 suites / 68 tests all passing. `npm run lint` clean.
+
+---
+
+## Phase 8 — Business-Logic Tests · CC · 2026-07-13
+Commit range: 5e5478f..6095bfb (includes `7a6d1ed`, this session's Phase 7 HANDOFF entry, written first)
+
+### What I did
+- New `tests/utils/statusMachine.test.js`: direct, isolated unit tests for `isLegalTransition` and
+  `getLegalTransitions` (no DB, no HTTP — pure function tests). Covers every legal edge in the transition
+  graph (7 of them, via `it.each`), every illegal edge (13, via `it.each` — includes backward transitions,
+  skip-ahead transitions, and every attempted transition out of `rejected`), no-op self-transitions for
+  every status, and unknown/garbage status strings (proves it fails closed — returns `false`/`[]` rather
+  than throwing). This was the one real gap identified in Phase 7's handoff: the state machine was only
+  ever exercised indirectly through Phase 4's HTTP route tests.
+- Extended `tests/middleware/auth.middleware.test.js` with edge cases not in Phase 2's original coverage:
+  header present but missing the `Bearer ` prefix, an expired token (signed with `expiresIn: -10`), and a
+  token forged with the wrong secret (proves signature verification, not just presence, is checked).
+- Did not touch `tests/routes/auth.routes.test.js` or `tests/routes/application.routes.test.js` — those
+  already have solid end-to-end coverage of the transition graph and auth flow from Phases 2 and 4.
+
+### Diff check against previous entry
+- Confirmed: `git diff 18fce62..5e5478f --stat` (Phase 7's actual code diff) matched what the Phase 7
+  HANDOFF entry claims — errorHandler.js CastError fix + the listed test additions, nothing else.
+
+### Decisions made
+- None new. This phase is pure test-coverage work.
+
+### Open questions / blockers for the next agent
+- None blocking. **The backend is now complete** per `PLAN.md`'s Phase 8 exit criteria ("all backend
+  tests green; this closes out the backend"). Phase 9 (Frontend Scaffold + Auth Pages) is next, also CC
+  per the 2026-07-13 plan update — this is the first frontend phase, so read `frontend/src/App.jsx` and
+  `frontend/vite.config.js` from Phase 0 before starting (Vite proxies `/api` to `localhost:4000` already,
+  Tailwind v4 is set up via `@tailwindcss/vite`, React Router's `BrowserRouter` is already wrapping `App`
+  in `main.jsx`).
+- Backend surface for the frontend to consume: `/api/auth/{register,login,refresh,logout}`,
+  `/api/listings` (GET list with `?search&tags&location&status&cursor&limit`, GET `/:id`, POST/PUT/DELETE
+  poster-only), `/api/applications/{:listingId/apply, listing/:listingId, :applicationId,
+  :applicationId/status}`.
+
+### Exit criteria met?
+- Yes. `npm test` → 9 suites / 96 tests all passing. `npm run lint` clean. Backend is feature-complete
+  and closed out per the plan.
