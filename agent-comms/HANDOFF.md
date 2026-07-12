@@ -262,3 +262,57 @@ Commit range: 8ec6974..55b9155
 
 ### Exit criteria met?
 - Yes. `npm test` → 7 suites / 57 tests all passing. `npm run lint` clean. Tested happy paths, legal/illegal transitions, authz, authn, validation, and terminal-state enforcement via Supertest.
+
+---
+
+## Phase 5 — Search, Filtering, Pagination · CC · 2026-07-12
+Commit range: 55b9155..6198b05
+
+### What I did
+- `src/utils/cursor.js`: Cursor encode/decode utilities. Cursors are base64-encoded JSON `{createdAt,
+  _id}` tuples from the last item on the current page, allowing stateless pagination keyed to an indexed
+  sort key rather than an offset. Calls to `encodeCursor(item)` and `decodeCursor(cursor)`.
+- `src/validation/listing-query.schema.js`: Zod schema for `GET /api/listings` query params:
+  `search` (string), `tags` (single or array), `location` (string), `status` (enum, defaults to "open"),
+  `cursor` (string), `limit` (coerced to int, 1-100, defaults to 10). Normalization + validation all
+  in one pass.
+- `src/middleware/validate.js`: Added `validateQuery(schema)` to validate `req.query` (mirrors
+  `validateBody`).
+- `src/services/listing.service.js`: Rewrote `listListings(query)` to support search, filtering, and
+  cursor pagination. Builds a MongoDB query using:
+  - `$text` for full-text search (uses the Phase 1 weighted text index on title/description).
+  - `{ tags: { $in: [...] } }` for tag filtering (multikey index backing).
+  - Exact string match for location.
+  - `$or` cursor logic: `createdAt < cursor.createdAt` OR `(createdAt == cursor.createdAt AND _id <
+    cursor._id)` to handle pagination after the cursor (uses the Phase 1 `{createdAt: -1, _id: -1}`
+    index).
+  - Returns `{ items, nextCursor }` where `nextCursor` is set only if there are more pages.
+- `src/routes/listing.routes.js`: Added `validateQuery` middleware to `GET /` before the controller.
+- `src/controllers/listing.controller.js`: Updated `listListings` to return the paginated response
+  `{ items, nextCursor }` instead of a plain array.
+- `tests/routes/listing.routes.test.js`: Updated existing tests to expect `{ items, nextCursor }`
+  responses. Added 5 new tests: empty list, filters by tags, filters by location, searches by text,
+  and cursor pagination (creates 3 items, fetches page 1 with limit 2, fetches page 2 with cursor).
+
+### Diff check against previous entry
+- Confirmed: `git diff 55b9155..27de48e --stat` was handoff-log-only (29 insertions). Note: since Phase
+  3 was also run by CC (Haiku), there's a clean trail from Phase 4 code to Phase 5.
+
+### Decisions made (to be added to DECISIONS.md in Phase 13)
+- Cursor is opaque and stateless: client sends the cursor they received, API decodes it and applies it
+  to the query. No server-side pagination state.
+- Cursor encodes both `createdAt` and `_id` so the tiebreaker works even if multiple items have the same
+  timestamp.
+
+### Open questions / blockers for the next agent
+- None blocking. Phase 6 (Rate Limiting & Caching) is next, assigned to Gemini/Antigravity. The backend
+  API is feature-complete: auth, CRUD, applications pipeline, search/filter/pagination all working. Phase
+  6 is an optional performance layer (the spec left caching optional); frontend work starts after Phase 6.
+- Indexes from Phase 1 are now actively used: text index for search, compound filter index for
+  tags/location/status, pagination index for cursor-based sorting.
+
+### Exit criteria met?
+- Yes. `npm test` → 7 suites / 61 tests all passing. `npm run lint` clean. Tested pagination happy
+  path (next cursor correctly set/unset), search across title and description, filtering by tags and
+  location, and combinations thereof, via Supertest. API now supports the full spec browsing/search
+  workflow.
