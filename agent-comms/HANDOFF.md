@@ -233,3 +233,32 @@ Commit range: b624304..8ec6974
 ### Exit criteria met?
 - Yes. `npm test` → 6 suites / 42 tests all passing. `npm run lint` clean. Tested happy paths, RBAC
   enforcement, authorization errors, and validation errors via Supertest.
+
+---
+
+## Phase 4 — Applications & Status Pipeline · CC · 2026-07-12
+Commit range: 8ec6974..55b9155
+
+### What I did
+- `src/utils/statusMachine.js`: Centralized state machine defining legal transitions:
+  `applied → [shortlisted, rejected]`, `shortlisted → [interview, rejected]`, `interview → [offer, rejected]`, `offer → [rejected]`, `rejected → []` (terminal). Two exported functions: `isLegalTransition(from, to)` and `getLegalTransitions(from)`. This is the single source of truth for the pipeline, kept *outside* the service so it's testable in isolation and the transition logic is explicit and defensible.
+- `src/validation/application.schema.js`: `applySchema` (required: resumeUrl; optional: coverNote) and `updateApplicationStatusSchema` (required: status).
+- `src/services/application.service.js`: `apply` (checks for duplicate application as defense-in-depth; the DB unique index is the actual guard), `getApplicationsForListing` (verifies poster owns the listing), `updateApplicationStatus` (enforces the state machine via `isLegalTransition`, appends to `statusHistory`), `getApplicationById`.
+- `src/controllers/application.controller.js`: thin handlers calling the service.
+- `src/routes/application.routes.js`: POST `/:listingId/apply` (auth+applicant), GET `/listing/:listingId` (auth+poster), PUT `/:applicationId/status` (auth+poster), GET `/:applicationId` (auth).
+- `src/app.js`: mounted at `/api/applications`.
+- `tests/routes/application.routes.test.js`: 17 new tests covering apply (happy path, duplicate prevention, authz/authn errors, validation), listing applicants (happy path, authz), status updates (legal/illegal transitions, rejection from any state, terminal-state lock-out, authz), and get-by-id. All existing tests still passing (57 total now).
+
+### Diff check against previous entry
+- Confirmed: `git diff 8ec6974..66e82a0 --stat` was handoff-log-only (37 insertions).
+
+### Decisions made (to be added to DECISIONS.md in Phase 13)
+- Status machine is a separate utility function (not buried in service logic), making the transition graph explicit, testable, and defensible in interviews.
+- The state machine is **not a state table** (e.g., reject-to-applied); it's a directed graph where `rejected` is terminal by design.
+
+### Open questions / blockers for the next agent
+- None blocking. Phase 5 (Search, Filtering, Pagination) is next and assigned to Claude Code. The status machine is complete and stable; future phases only *read* statuses, they don't define transitions.
+- All three core resource types (User, Listing, Application) now have full CRUD paths wired and tested. The backend is functionally complete for the core ATS pipeline.
+
+### Exit criteria met?
+- Yes. `npm test` → 7 suites / 57 tests all passing. `npm run lint` clean. Tested happy paths, legal/illegal transitions, authz, authn, validation, and terminal-state enforcement via Supertest.
