@@ -198,3 +198,21 @@ catalog Phase 5's cursor pagination exists for.
 **Alternatives considered:** Client-side aggregation from per-listing calls — would require the applicant
 to already know every listing id they'd applied to (they don't, that's the whole problem), so not
 actually viable, not just suboptimal.
+
+## Resume upload storage abstraction — decided in Phase 13 by CC
+**Decision:** `multer.memoryStorage()` (not `diskStorage`) parses the multipart upload into a buffer;
+a separate `storage.service.js` with one function — `saveFile(file) -> url` — is what actually writes the
+buffer to disk (`backend/uploads/`, gitignored) and returns a URL. The upload route/controller only ever
+calls `saveFile`; they don't know or care that today's implementation happens to be local disk.
+**Why:** This directly satisfies the original spec's requirement to "structure it so swapping to S3 later
+is trivial" — a future S3 version replaces `saveFile`'s body (buffer → `PutObjectCommand`, return the S3
+URL) with the exact same function signature, and nothing in `upload.middleware.js`, `upload.controller.js`,
+or `upload.routes.js` changes. Using `memoryStorage` instead of `diskStorage` in multer itself is what
+makes this possible — `diskStorage` would bake "write straight to a local path" into the multer config
+itself, coupling the multipart-parsing step to the persistence decision instead of keeping them separate.
+**Alternatives considered:** `multer.diskStorage()` writing directly to `uploads/` — simpler (one less
+module) but couples multipart parsing to local-disk persistence, so an S3 swap would mean reconfiguring
+multer itself rather than swapping one small module; rejected given the spec explicitly asked for
+S3-swap-friendliness. Storing the file as a Buffer directly in MongoDB (e.g. on the `Application` document)
+— rejected, bloats the database with binary blobs and defeats the point of a URL-based `resumeUrl` field
+that's already in the Phase 1 schema.

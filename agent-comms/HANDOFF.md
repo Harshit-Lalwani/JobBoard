@@ -694,3 +694,66 @@ Commit range: bb8372f..ee9b263 (includes `1361ea9`, this session's Phase 11 HAND
 - Yes (per `PLAN.md`: "'My applications' list + per-application status view"). Verified live through the
   proxy with real status transitions and a real multi-application history, not just the empty/happy-path
   shell. Backend 104/104, frontend builds and lints clean.
+
+---
+
+## Phase 13 (part 1) — Reconciliation finding: resume upload was never built · CC · 2026-07-13
+Commit range: ee9b263..1b142bb (includes `b1a0602`, this session's Phase 12 HANDOFF entry, written first)
+
+### What I did
+- Started the Phase 13 integration pass as instructed: reading every `HANDOFF.md` entry top to bottom and
+  diffing Phase 0's first commit to `HEAD`. That reading surfaced a real gap, not just a style
+  inconsistency: `Initial_prompt.md` explicitly requires "multer for resume/PDF uploads, stored locally
+  for now (structure it so swapping to S3 later is trivial)," but **no phase in `PLAN.md` ever scheduled
+  it**, and no phase implemented it — the apply flow (Phase 4 backend, Phase 10 frontend form) always took
+  a plain-text `resumeUrl` string. This is different in kind from the Redis-caching gap: the user
+  explicitly deferred caching (see the 2026-07-13 note in `PLAN.md`); nobody ever deferred file upload,
+  it just fell through the cracks of the original phase breakdown. Fixed it now rather than deferring it
+  further or just writing it up as a known gap in the README.
+- `backend/src/services/storage.service.js`: `saveFile(file) -> url`, the *only* place that knows files
+  are persisted to local disk right now. Full S3-swap rationale in `DECISIONS.md`.
+- `backend/src/middleware/upload.js`: `multer.memoryStorage()` (deliberately not `diskStorage`, see
+  `DECISIONS.md`), PDF-only `fileFilter`, 5MB limit.
+- `backend/src/controllers/upload.controller.js` + `routes/upload.routes.js`: `POST /api/uploads/resume`
+  (`requireAuth`), mounted at `/api/uploads` in `app.js`, plus `express.static('/uploads')` to serve
+  files back.
+- `backend/src/middleware/errorHandler.js`: added `MulterError` → 400 handling, same reasoning as the
+  existing `CastError` case from Phase 7 (a multer validation failure — e.g. file too large — is a client
+  error, not a server fault).
+- `backend/tests/routes/upload.routes.test.js`: 4 tests (successful upload + fetch-back, non-PDF
+  rejected, no-file rejected, unauthenticated rejected), cleans up its own `uploads/` dir in `afterAll`.
+  Backend now 108/108.
+- `frontend/src/api/uploads.js`: `uploadResume(file)`, posts `FormData`.
+- `frontend/src/pages/ListingDetailPage.jsx`: apply form's resume field is now a real `<input
+  type="file" accept="application/pdf">`, `handleApply` uploads first (`applyState: "uploading"`) then
+  submits the application with the returned URL (`applyState: "submitting"`) — two distinct loading
+  states shown to the user rather than one generic spinner, since they're two different network calls
+  that can each fail independently.
+- **Found and fixed a second bug during live verification** (not from reading code — only showed up when
+  actually clicking through): the Vite dev proxy (`vite.config.js`, from Phase 0) only forwarded `/api`,
+  so fetching an uploaded file back through the frontend origin returned the SPA's `index.html` (Vite's
+  client-routing fallback) instead of the actual PDF. Added `/uploads` to the proxy config. Verified by
+  fetching the *same* URL both before and after the fix — before: got back an `<html>` document; after:
+  got back the literal PDF bytes.
+- Full live verification: uploaded a real (fake-content) PDF through the proxy, fetched it back
+  successfully, and confirmed a `.txt` file is rejected with 400 — all through `curl` hitting the same
+  URLs the React components hit, not a mocked test.
+
+### Diff check against previous entry
+- Confirmed: `git diff bb8372f..ee9b263 --stat` (Phase 12's actual diff) matched the Phase 12 HANDOFF
+  entry.
+
+### Decisions made (already in DECISIONS.md)
+- Resume storage abstraction (`memoryStorage` + a separate `saveFile` service function) and why it's
+  structured that way specifically for the spec's S3-swap requirement.
+
+### Open questions / blockers for the next agent
+- None blocking — this was the last code change. What remains for Phase 13 is what was originally
+  scoped for it: write the final `README.md` (setup instructions + architecture summary) and consolidate
+  `DECISIONS.md` into its interview-prep section. No more implementation gaps expected, but the README
+  pass should still double-check the three "known minor items" listed in the Phase 12 entry above.
+
+### Exit criteria met?
+- N/A as a standalone phase (this is scope discovered *during* Phase 13, not one of the original 13
+  phases) — folded into Phase 13's commit range. Backend 108/108, frontend builds and lints clean, both
+  bugs found in this pass (upload endpoint gap, proxy config gap) are fixed and verified live.
