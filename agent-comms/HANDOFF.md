@@ -364,3 +364,48 @@ Commit range: 6198b05..18fce62 (includes the plan-update commit `f308620` — se
 ### Exit criteria met?
 - Yes. `npm test` → 8 suites / 62 tests all passing. `npm run lint` clean. 429 verified under a burst of
   6 rapid apply calls against 6 distinct listings.
+
+---
+
+## Phase 7 — CRUD/Filter test gap-check · CC · 2026-07-13
+Commit range: 18fce62..5e5478f (includes `ca17e35`, this session's Phase 6 HANDOFF entry, written first)
+
+### What I did
+- Read through Phase 3's (`tests/routes/listing.routes.test.js`) and Phase 5's coverage in full before
+  writing anything new, per the plan's instruction that this phase is a gap-check, not a rewrite.
+- **Found and fixed a real bug** while gap-checking, not just a missing test: `GET/PUT/DELETE
+  /api/listings/:id` (and the equivalent on `/api/applications/:id`) returned a bare **500** for a
+  malformed id like `not-a-valid-id`, because Mongoose throws a `CastError` (not an `ApiError`), which
+  the Phase 0 `errorHandler` didn't recognize and fell through to the generic `err.statusCode || 500`
+  branch. Fixed centrally in `src/middleware/errorHandler.js`: `err.name === "CastError"` now maps to a
+  `400` with a clear message, before the generic branch runs. This fixes it for *every* resource's `:id`
+  param, not just listings, since the fix is in the shared handler.
+- Added tests for the gaps that were actually missing:
+  - `listing.routes.test.js`: malformed-id → 400 (proves the fix above), closed listings excluded from
+    the default browse, tags+location+status combined in one query (exercises the Phase 1 compound index
+    the way it's actually meant to be used), out-of-range `limit` → 400, invalid `status` enum value → 400.
+  - `application.routes.test.js`: malformed-id → 400 on `GET /:applicationId`.
+- Did not touch auth or status-transition test files, per the plan's boundary for this phase (that's
+  Phase 8's job, and largely already covered by Phase 2/4's own tests anyway).
+
+### Diff check against previous entry
+- Confirmed: `git diff 6198b05..18fce62 --stat` (Phase 6's actual diff, including the plan-update commit)
+  matched what the Phase 6 HANDOFF entry (written in this same session, just before this one) claims.
+
+### Decisions made
+- None new — the CastError fix is a bug fix, not a design decision, so it's not going in `DECISIONS.md`.
+  Worth a one-line mention in the Phase 13 README under "known issues found and fixed," if that section
+  ends up existing.
+
+### Open questions / blockers for the next agent
+- None blocking. Phase 8 (Business-Logic Tests: status machine + auth middleware) is next, also CC. Given
+  Phase 2 already has `tests/middleware/auth.middleware.test.js` and Phase 4 already tests every legal/
+  illegal transition through the real HTTP routes, Phase 8 should likewise be a targeted gap-check: the
+  one clear gap is that `isLegalTransition`/`getLegalTransitions` in `src/utils/statusMachine.js` have no
+  *direct* unit tests — they're only exercised indirectly through the Phase 4 route tests. Worth adding
+  direct unit tests for the state machine function itself (pure function, no DB/HTTP needed) so the
+  transition graph is verifiable in isolation, which is exactly the kind of thing to point to in an
+  interview.
+
+### Exit criteria met?
+- Yes. `npm test` → 8 suites / 68 tests all passing. `npm run lint` clean.
