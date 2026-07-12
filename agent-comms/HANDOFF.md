@@ -139,3 +139,60 @@ since it landed before Phase 1 started)
 ### Exit criteria met?
 - Yes. `npm test` → 3 suites / 12 tests passing. `npm run lint` clean. Manually verified `src/index.js`
   connects to MongoDB and then boots the API (see note above on how, given no local `mongod`).
+
+---
+
+## Phase 2 — Auth · CC · 2026-07-12
+Commit range: 05546ca..b624304
+
+### What I did
+- `src/utils/jwt.js`: `signAccessToken`/`verifyAccessToken` (short-lived, `ACCESS_TOKEN_TTL`) and
+  `signRefreshToken`/`verifyRefreshToken` (long-lived JWT, separate secret, `REFRESH_TOKEN_TTL`).
+- `src/utils/refreshToken.js`: bcrypt hash/compare helpers for the refresh token, used for server-side
+  revocation (see below).
+- `src/utils/duration.js`: tiny `"15m"`/`"30d"`-style duration parser, used to set the refresh cookie's
+  `maxAge` from `env.refreshTokenTtl`.
+- `src/services/auth.service.js`: `register`/`login`/`refresh`/`logout`. Passwords hashed with bcrypt
+  (10 rounds). `register`/`login` both issue an access token + refresh token and persist
+  `bcrypt(refreshToken)` on the user. `refresh` verifies the refresh JWT's signature/expiry, loads the
+  user by its `sub` claim, then bcrypt-compares the raw token against the stored hash before minting a new
+  access token — the static refresh token itself is never reissued (matches the Phase 0 decision).
+  `logout` clears `refreshTokenHash`, which is what makes revocation actually work (a cleared hash fails
+  the compare even if the JWT signature/expiry are still valid).
+- `src/middleware/auth.js`: `requireAuth` (parses `Authorization: Bearer`, verifies, sets
+  `req.user = {id, role}`) and `requireRole(...roles)` (403 if `req.user.role` isn't allowed, 401 if
+  `req.user` is missing — i.e. it was mounted before `requireAuth`).
+- `src/middleware/validate.js`: generic `validateBody(zodSchema)`, wired into `POST /register` and
+  `POST /login` via `src/validation/auth.schema.js`. Validation failures go through the existing
+  `ApiError`/`errorHandler` from Phase 0 with a `400` and per-field messages.
+- `src/controllers/auth.controller.js` + `src/routes/auth.routes.js`, mounted at `/api/auth` in `app.js`:
+  `POST /register`, `POST /login`, `POST /refresh`, `POST /logout` (requires auth). Refresh token cookie:
+  `httpOnly`, `secure` in production only, `sameSite: strict`, scoped to `path: /api/auth`. Response
+  bodies never include `passwordHash`/`refreshTokenHash` (controller maps to a `toPublicUser` shape).
+- Tests: `tests/routes/auth.routes.test.js` (Supertest, full register/login/refresh/logout flow including
+  duplicate-email 409, bad-credentials 401, missing-cookie 401, and logout-then-refresh-fails to prove
+  revocation actually works) + `tests/middleware/auth.middleware.test.js` (unit tests for `requireAuth`/
+  `requireRole` against mock req/res/next, no DB needed). 16 new tests, 28 total now passing.
+- Full rationale for the JWT-based refresh token design is in `DECISIONS.md`.
+
+### Diff check against previous entry
+- Confirmed: `git diff 3f404aa..05546ca --stat` matched the Phase 1 entry's file list.
+
+### Decisions made (also copied to DECISIONS.md)
+- Refresh token is a signed JWT (not a random opaque string) so it self-identifies its owner via `sub`,
+  while still being revocable via a server-side bcrypt-hash comparison. Full writeup in `DECISIONS.md`.
+
+### Open questions / blockers for the next agent
+- None blocking. **Phase 3 (Listings CRUD) is next and is assigned to opencode (OC)** per `PLAN.md`, not
+  Claude Code — I'm stopping here rather than doing it myself, per the plan's ownership boundaries.
+  Whoever picks up Phase 3 should mirror this phase's layering exactly: `routes/` thin, `controllers/`
+  handle req/res + call services, `services/` hold the actual logic and throw `ApiError`, `validation/`
+  holds zod schemas, protect poster-only routes with `requireAuth, requireRole("poster")` from
+  `src/middleware/auth.js`.
+- Also verified live (not just Supertest-in-process): booted a standalone `mongodb-memory-server` +
+  `node src/index.js` and curled register/login/refresh by hand to rule out cookie-handling bugs that an
+  in-process Supertest app could mask. Scratch script deleted afterward, not part of the repo.
+
+### Exit criteria met?
+- Yes. Auth routes work end-to-end via Supertest (12 route tests) and were additionally verified against a
+  live server. RBAC middleware has dedicated unit tests (6 tests). `npm run lint` clean.
