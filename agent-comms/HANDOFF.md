@@ -757,3 +757,65 @@ Commit range: ee9b263..1b142bb (includes `b1a0602`, this session's Phase 12 HAND
 - N/A as a standalone phase (this is scope discovered *during* Phase 13, not one of the original 13
   phases) — folded into Phase 13's commit range. Backend 108/108, frontend builds and lints clean, both
   bugs found in this pass (upload endpoint gap, proxy config gap) are fixed and verified live.
+
+---
+
+## Phase 13 (part 2) — README + interview-prep consolidation · CC · 2026-07-13
+Commit range: 1b142bb..e7a1906 (includes `8e7a4b5`, this session's Phase 13-part-1 HANDOFF entry, written
+first)
+
+### What I did
+- Wrote the final `README.md`, replacing the Phase 0 stub: setup instructions (backend `.env` + `npm
+  install`/`npm run dev`, frontend `npm install`/`npm run dev`, both verified working commands, not just
+  plausible-looking ones — copied from what was actually run in every phase's live smoke test), a testing
+  section, project structure overview, a verified API reference table (cross-checked every row against the
+  actual route files, not written from memory — see below), and a condensed "Architecture & design
+  decisions" section covering the six load-bearing decisions (cursor pagination, `Listing` index design,
+  the status-transition state machine, refresh-token revocation, per-user rate limiting, resume-upload
+  storage abstraction) plus an explicit "known, deliberate tradeoffs" list (deferred Redis caching,
+  frontend status-graph duplication, in-memory rate limiting) so those read as decisions, not oversights.
+  Full alternatives-considered detail stays in `DECISIONS.md`; the README links to it rather than
+  duplicating it.
+- Verified two specific numeric claims before writing them rather than estimating: ran `npm test` for the
+  exact current total (108, not the 104 an earlier phase entry cited — Phase 13 part 1 added 4 more), and
+  ran the status-machine test file in isolation to get its exact count (25, not the 24 I initially wrote
+  from memory — fixed before committing).
+- Cross-checked every row of the API reference table against the actual contents of
+  `auth.routes.js`/`listing.routes.js`/`application.routes.js`/`upload.routes.js` rather than
+  reconstructing it from memory of earlier phases.
+- Addressed the three "known minor items" flagged in the Phase 12 entry: (1) `ListingDetailPage`'s
+  early construction is a non-issue, nothing to change; (2) the frontend statusMachine duplication is now
+  called out explicitly in the README's tradeoffs list, not just `DECISIONS.md`; (3) confirmed the
+  frontend genuinely needs no `.env` (the Vite proxy handles both `/api` and, as of Phase 13 part 1,
+  `/uploads`) and the README's setup instructions don't imply otherwise.
+- Did **not** re-run the full live-smoke-test-through-a-browser-proxy exercise for this part, since no
+  application code changed — only documentation. Backend test suite was re-run to get the accurate count
+  (see above), which incidentally also serves as a final regression check.
+
+### Diff check against previous entry
+- Confirmed: `git diff ee9b263..1b142bb --stat` (Phase 13 part 1's actual code diff) matched what that
+  entry claims — storage service, upload middleware/controller/route, errorHandler MulterError handling,
+  4 new tests, the frontend upload API wrapper + `ListingDetailPage` file-input rewrite, and the
+  `vite.config.js` proxy fix. Nothing unexpected.
+
+### Decisions made
+- None new — this part is documentation only, consolidating decisions already recorded across Phases
+  0–13 part 1 into `README.md`.
+
+### Open questions / blockers for the next agent
+- **There is no next agent.** All 13 phases in the original `PLAN.md` plus the Phase-13-discovered resume
+  upload gap are implemented, tested, verified live, and documented. If the user (or a future session)
+  picks this back up, the natural next steps — none of them blocking, all optional — are: (1) decide on
+  the deferred Redis caching item in `PLAN.md`'s "Optional / Deferred" section; (2) consider adding
+  frontend tests (none exist — the original spec only asked for backend business-logic tests, which are
+  done, but a portfolio project could still benefit from a few React Testing Library tests on the
+  pipeline board or auth flow); (3) the in-memory rate limiter and frontend statusMachine duplication are
+  both documented as conscious scope tradeoffs, not bugs — revisit only if the project's purpose changes
+  from "portfolio/interview piece" to "production service."
+
+### Exit criteria met?
+- Yes — this was the last phase. `README.md` has real, verified setup instructions and an interview-ready
+  architecture summary grounded in what was actually built and tested, not aspirational. Full project
+  history (every phase's rationale, what was verified and how, every design decision with alternatives
+  considered) is preserved in `agent-comms/` for anyone — including the user, prepping for an interview —
+  to read start to finish.
