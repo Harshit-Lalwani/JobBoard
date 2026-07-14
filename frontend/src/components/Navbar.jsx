@@ -11,8 +11,8 @@ export function Navbar() {
   }
 
   return (
-    <nav className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/90 px-6 py-4 backdrop-blur">
-      <Link to="/" className="text-lg font-bold text-indigo-600">
+    <nav className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-200 bg-white/80 px-6 py-4 backdrop-blur">
+      <Link to="/" className="text-lg font-bold tracking-tight text-emerald-600">
         Job Board
       </Link>
       <div className="flex items-center gap-4 text-sm">
@@ -20,18 +20,18 @@ export function Navbar() {
           <>
             <Link
               to={user.role === "poster" ? "/poster" : "/applicant"}
-              className="font-medium text-slate-700 hover:text-indigo-600"
+              className="font-medium text-stone-700 transition hover:text-emerald-600"
             >
               Dashboard
             </Link>
-            <span className="hidden text-slate-500 sm:inline">{user.name}</span>
+            <span className="hidden text-stone-500 sm:inline">{user.name}</span>
             <button onClick={handleLogout} className="btn-secondary">
               Log out
             </button>
           </>
         ) : (
           <>
-            <Link to="/login" className="font-medium text-slate-700 hover:text-indigo-600">
+            <Link to="/login" className="font-medium text-stone-700 transition hover:text-emerald-600">
               Log in
             </Link>
             <Link to="/register" className="btn-primary">

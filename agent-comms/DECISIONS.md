@@ -217,6 +217,12 @@ S3-swap-friendliness. Storing the file as a Buffer directly in MongoDB (e.g. on 
 — rejected, bloats the database with binary blobs and defeats the point of a URL-based `resumeUrl` field
 that's already in the Phase 1 schema.
 
+**Update (deploy prep):** the swap actually happened — `saveFile()` now calls **Vercel Blob** (`@vercel/
+blob`'s `put()`) when `BLOB_READ_WRITE_TOKEN` is set, falling back to the original local-disk code
+otherwise, so local dev/tests are unaffected. This is exactly the "change one function's body, nothing
+else moves" swap the abstraction was designed for — confirmed by how small the diff actually was. See
+`DEPLOYMENT.md` for the deploy checklist this unblocks.
+
 ## Switching listing search/filters from exact/`$text` matching to substring regex — revised post-launch by CC
 **Decision:** `GET /api/listings`'s `search`, `tags`, and `location` params now all match as
 case-insensitive **substrings** using escaped regexes (`new RegExp(escapeRegExp(input), "i")`), replacing

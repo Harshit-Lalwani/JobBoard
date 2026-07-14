@@ -31,10 +31,10 @@ export function RegisterPage() {
   return (
     <main className="flex min-h-[80vh] items-center justify-center px-4 py-10">
       <div className="card w-full max-w-sm p-8">
-        <h1 className="mb-6 text-2xl font-bold text-slate-900">Create an account</h1>
+        <h1 className="mb-6 text-2xl font-bold text-stone-900">Create an account</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="name" className="block text-sm font-medium text-stone-700">
               Name
             </label>
             <input
@@ -47,7 +47,7 @@ export function RegisterPage() {
             />
           </div>
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="email" className="block text-sm font-medium text-stone-700">
               Email
             </label>
             <input
@@ -60,7 +60,7 @@ export function RegisterPage() {
             />
           </div>
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="password" className="block text-sm font-medium text-stone-700">
               Password
             </label>
             <input
@@ -72,18 +72,18 @@ export function RegisterPage() {
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               className="input-field mt-1"
             />
-            <p className="mt-1 text-xs text-slate-500">At least 8 characters.</p>
+            <p className="mt-1 text-xs text-stone-500">At least 8 characters.</p>
           </div>
           <fieldset>
-            <legend className="block text-sm font-medium text-slate-700">I am a…</legend>
+            <legend className="block text-sm font-medium text-stone-700">I am a…</legend>
             <div className="mt-2 grid grid-cols-2 gap-2">
               {["applicant", "poster"].map((role) => (
                 <label
                   key={role}
                   className={`cursor-pointer rounded-lg border px-3 py-2 text-center text-sm font-medium capitalize transition ${
                     form.role === role
-                      ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                      : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                      ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                      : "border-stone-300 text-stone-600 hover:bg-stone-50"
                   }`}
                 >
                   <input
@@ -104,9 +104,9 @@ export function RegisterPage() {
             {submitting ? "Creating account…" : "Register"}
           </button>
         </form>
-        <p className="mt-4 text-sm text-slate-600">
+        <p className="mt-4 text-sm text-stone-600">
           Already have an account?{" "}
-          <Link to="/login" className="font-medium text-indigo-600 underline">
+          <Link to="/login" className="font-medium text-emerald-600 underline">
             Log in
           </Link>
         </p>

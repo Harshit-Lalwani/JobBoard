@@ -5,16 +5,24 @@ import crypto from "node:crypto";
 const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
 
 /**
- * Local-disk file storage. This is the one place that knows *how* files are persisted — swapping
- * to S3 later means changing only this function's body (write to a bucket, return the S3 URL
- * instead of a local path) with the same signature, not touching the upload route/controller.
+ * The one place that knows *how* files are persisted. Uses Vercel Blob when
+ * BLOB_READ_WRITE_TOKEN is configured (production on Vercel — local disk isn't writable/durable
+ * there); falls back to local disk otherwise (local dev, tests, or any non-Vercel host), with no
+ * env var needed to opt in. The upload route/controller never know which one ran.
  */
-export function saveFile(file) {
+export async function saveFile(file) {
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const { put } = await import("@vercel/blob");
+    const filename = `${crypto.randomUUID()}${path.extname(file.originalname)}`;
+    const blob = await put(filename, file.buffer, {
+      access: "public",
+      contentType: file.mimetype,
+    });
+    return blob.url;
+  }
+
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-
-  const ext = path.extname(file.originalname);
-  const filename = `${crypto.randomUUID()}${ext}`;
+  const filename = `${crypto.randomUUID()}${path.extname(file.originalname)}`;
   fs.writeFileSync(path.join(UPLOAD_DIR, filename), file.buffer);
-
   return `/uploads/${filename}`;
 }

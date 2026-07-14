@@ -55,12 +55,12 @@ export function PosterDashboardPage() {
 
   return (
     <main className="page-container">
-      <h1 className="text-3xl font-bold text-slate-900">Poster dashboard</h1>
-      <p className="mt-1 text-slate-500">Welcome, {user?.name}.</p>
+      <h1 className="text-3xl font-bold text-stone-900">Poster dashboard</h1>
+      <p className="mt-1 text-stone-500">Welcome, {user?.name}.</p>
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">My listings</h2>
+          <h2 className="text-lg font-semibold text-stone-900">My listings</h2>
           {!showCreateForm && (
             <button onClick={() => setShowCreateForm(true)} className="btn-primary">
               New listing
@@ -78,7 +78,7 @@ export function PosterDashboardPage() {
           </div>
         )}
 
-        {status === "loading" && <p className="mt-4 text-slate-500">Loading…</p>}
+        {status === "loading" && <p className="mt-4 text-stone-500">Loading…</p>}
         {status === "error" && <p className="mt-4 text-red-600">{error}</p>}
 
         <div className="mt-4 space-y-3">
@@ -95,14 +95,14 @@ export function PosterDashboardPage() {
               <div key={listing._id} className="card p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h3 className="font-semibold text-slate-900">{listing.title}</h3>
-                    <p className="text-sm text-slate-500">
+                    <h3 className="font-semibold text-stone-900">{listing.title}</h3>
+                    <p className="text-sm text-stone-500">
                       {listing.location} ·{" "}
                       <span
                         className={
                           listing.status === "open"
                             ? "font-medium text-green-700"
-                            : "font-medium text-slate-500"
+                            : "font-medium text-stone-500"
                         }
                       >
                         {listing.status}
@@ -131,7 +131,7 @@ export function PosterDashboardPage() {
                 </div>
 
                 {pipelineListingId === listing._id && (
-                  <div className="mt-4 border-t border-slate-200 pt-4">
+                  <div className="mt-4 border-t border-stone-200 pt-4">
                     <PipelineBoard listingId={listing._id} />
                   </div>
                 )}
@@ -139,7 +139,7 @@ export function PosterDashboardPage() {
             )
           )}
           {status === "ready" && listings.length === 0 && !showCreateForm && (
-            <p className="text-slate-500">You haven't posted any listings yet.</p>
+            <p className="text-stone-500">You haven't posted any listings yet.</p>
           )}
         </div>
       </section>

@@ -24,16 +24,16 @@ export function ApplicantDashboardPage() {
 
   return (
     <main className="page-container max-w-2xl">
-      <h1 className="text-3xl font-bold text-slate-900">My applications</h1>
-      <p className="mt-1 text-slate-500">Welcome, {user?.name}.</p>
+      <h1 className="text-3xl font-bold text-stone-900">My applications</h1>
+      <p className="mt-1 text-stone-500">Welcome, {user?.name}.</p>
 
       <div className="mt-8 space-y-4">
-        {status === "loading" && <p className="text-slate-500">Loading…</p>}
+        {status === "loading" && <p className="text-stone-500">Loading…</p>}
         {status === "error" && <p className="text-red-600">{error}</p>}
         {status === "ready" && applications.length === 0 && (
-          <p className="text-slate-500">
+          <p className="text-stone-500">
             You haven't applied to anything yet.{" "}
-            <Link to="/" className="font-medium text-indigo-600 underline">
+            <Link to="/" className="font-medium text-emerald-600 underline">
               Browse listings
             </Link>
             .
@@ -46,19 +46,19 @@ export function ApplicantDashboardPage() {
               <div>
                 <Link
                   to={`/listings/${app.listingId?._id}`}
-                  className="font-semibold text-slate-900 hover:text-indigo-600 hover:underline"
+                  className="font-semibold text-stone-900 hover:text-emerald-600 hover:underline"
                 >
                   {app.listingId?.title ?? "Listing no longer available"}
                 </Link>
-                <p className="text-sm text-slate-500">{app.listingId?.location}</p>
+                <p className="text-sm text-stone-500">{app.listingId?.location}</p>
               </div>
               <StatusBadge status={app.status} />
             </div>
 
-            <ol className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-xs text-slate-500">
+            <ol className="mt-3 space-y-1 border-t border-stone-100 pt-3 text-xs text-stone-500">
               {app.statusHistory?.map((entry, i) => (
                 <li key={i}>
-                  <span className="font-medium text-slate-700">{entry.status}</span> —{" "}
+                  <span className="font-medium text-stone-700">{entry.status}</span> —{" "}
                   {new Date(entry.changedAt).toLocaleString()}
                 </li>
               ))}

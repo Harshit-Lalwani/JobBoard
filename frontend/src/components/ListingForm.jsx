@@ -35,7 +35,7 @@ export function ListingForm({ initial, onSubmit, onCancel, submitLabel }) {
   return (
     <form onSubmit={handleSubmit} className="card space-y-3 p-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700">Title</label>
+        <label className="block text-sm font-medium text-stone-700">Title</label>
         <input
           type="text"
           required
@@ -45,7 +45,7 @@ export function ListingForm({ initial, onSubmit, onCancel, submitLabel }) {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-slate-700">Description</label>
+        <label className="block text-sm font-medium text-stone-700">Description</label>
         <textarea
           required
           rows={3}
@@ -56,7 +56,7 @@ export function ListingForm({ initial, onSubmit, onCancel, submitLabel }) {
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="block text-sm font-medium text-slate-700">Location</label>
+          <label className="block text-sm font-medium text-stone-700">Location</label>
           <input
             type="text"
             required
@@ -66,7 +66,7 @@ export function ListingForm({ initial, onSubmit, onCancel, submitLabel }) {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700">Tags (comma-separated)</label>
+          <label className="block text-sm font-medium text-stone-700">Tags (comma-separated)</label>
           <input
             type="text"
             value={form.tags}

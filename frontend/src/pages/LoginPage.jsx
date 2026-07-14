@@ -26,10 +26,10 @@ export function LoginPage() {
   return (
     <main className="flex min-h-[80vh] items-center justify-center px-4">
       <div className="card w-full max-w-sm p-8">
-        <h1 className="mb-6 text-2xl font-bold text-slate-900">Log in</h1>
+        <h1 className="mb-6 text-2xl font-bold text-stone-900">Log in</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="email" className="block text-sm font-medium text-stone-700">
               Email
             </label>
             <input
@@ -42,7 +42,7 @@ export function LoginPage() {
             />
           </div>
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="password" className="block text-sm font-medium text-stone-700">
               Password
             </label>
             <input
@@ -59,9 +59,9 @@ export function LoginPage() {
             {submitting ? "Logging in…" : "Log in"}
           </button>
         </form>
-        <p className="mt-4 text-sm text-slate-600">
+        <p className="mt-4 text-sm text-stone-600">
           No account?{" "}
-          <Link to="/register" className="font-medium text-indigo-600 underline">
+          <Link to="/register" className="font-medium text-emerald-600 underline">
             Register
           </Link>
         </p>

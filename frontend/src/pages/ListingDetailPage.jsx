@@ -40,7 +40,7 @@ export function ListingDetailPage() {
     return (
       <main className="page-container max-w-2xl">
         <p className="text-red-600">{loadError}</p>
-        <Link to="/" className="mt-4 inline-block text-sm text-indigo-600 underline">
+        <Link to="/" className="mt-4 inline-block text-sm text-emerald-600 underline">
           Back to listings
         </Link>
       </main>
@@ -48,7 +48,7 @@ export function ListingDetailPage() {
   }
 
   if (!listing) {
-    return <main className="page-container max-w-2xl text-slate-500">Loading…</main>;
+    return <main className="page-container max-w-2xl text-stone-500">Loading…</main>;
   }
 
   const canApply = status === "signed-in" && user?.role === "applicant";
@@ -56,11 +56,11 @@ export function ListingDetailPage() {
 
   return (
     <main className="page-container max-w-2xl">
-      <Link to="/" className="text-sm text-slate-500 hover:text-indigo-600">
+      <Link to="/" className="text-sm text-stone-500 hover:text-emerald-600">
         ← Back to listings
       </Link>
-      <h1 className="mt-4 text-3xl font-bold text-slate-900">{listing.title}</h1>
-      <p className="mt-1 text-slate-500">{listing.location}</p>
+      <h1 className="mt-4 text-3xl font-bold text-stone-900">{listing.title}</h1>
+      <p className="mt-1 text-stone-500">{listing.location}</p>
       {listing.tags?.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-2">
           {listing.tags.map((tag) => (
@@ -70,28 +70,28 @@ export function ListingDetailPage() {
           ))}
         </ul>
       )}
-      <p className="mt-6 whitespace-pre-wrap leading-relaxed text-slate-700">{listing.description}</p>
+      <p className="mt-6 whitespace-pre-wrap leading-relaxed text-stone-700">{listing.description}</p>
 
       <div className="mt-10">
         {applyState === "applied" ? (
-          <div className="card border-green-200 bg-green-50 p-6 text-center">
-            <p className="font-medium text-green-800">✓ Application submitted.</p>
+          <div className="card border-emerald-200 bg-emerald-50 p-6 text-center">
+            <p className="font-medium text-emerald-800">✓ Application submitted.</p>
           </div>
         ) : canApply ? (
-          <form onSubmit={handleApply} className="card space-y-5 border-indigo-100 bg-indigo-50/40 p-6">
-            <h2 className="text-lg font-semibold text-slate-900">Apply to this listing</h2>
+          <form onSubmit={handleApply} className="card space-y-5 border-emerald-100 bg-emerald-50/40 p-6">
+            <h2 className="text-lg font-semibold text-stone-900">Apply to this listing</h2>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">Resume (PDF)</label>
+              <label className="mb-2 block text-sm font-medium text-stone-700">Resume (PDF)</label>
               <label
                 htmlFor="resume"
                 className={`flex cursor-pointer items-center gap-4 rounded-xl border-2 border-dashed p-5 transition ${
                   resumeFile
-                    ? "border-indigo-400 bg-white"
-                    : "border-indigo-300 bg-white hover:border-indigo-500 hover:bg-indigo-50"
+                    ? "border-emerald-400 bg-white"
+                    : "border-emerald-300 bg-white hover:border-emerald-500 hover:bg-emerald-50"
                 }`}
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 24 24"
@@ -110,17 +110,17 @@ export function ListingDetailPage() {
                 <span className="min-w-0">
                   {resumeFile ? (
                     <>
-                      <span className="block truncate font-medium text-slate-900">
+                      <span className="block truncate font-medium text-stone-900">
                         {resumeFile.name}
                       </span>
-                      <span className="text-xs text-indigo-600">Click to choose a different file</span>
+                      <span className="text-xs text-emerald-600">Click to choose a different file</span>
                     </>
                   ) : (
                     <>
-                      <span className="block font-medium text-indigo-700">
+                      <span className="block font-medium text-emerald-700">
                         Click to upload your resume
                       </span>
-                      <span className="text-xs text-slate-500">PDF only, up to 5MB</span>
+                      <span className="text-xs text-stone-500">PDF only, up to 5MB</span>
                     </>
                   )}
                 </span>
@@ -136,7 +136,7 @@ export function ListingDetailPage() {
             </div>
 
             <div>
-              <label htmlFor="coverNote" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="coverNote" className="block text-sm font-medium text-stone-700">
                 Cover note (optional)
               </label>
               <textarea
@@ -148,7 +148,7 @@ export function ListingDetailPage() {
               />
             </div>
             {applyError && <p className="text-sm text-red-600">{applyError}</p>}
-            <button type="submit" disabled={isBusy} className="btn-primary w-full sm:w-auto">
+            <button type="submit" disabled={isBusy} className="btn-accent w-full sm:w-auto">
               {applyState === "uploading"
                 ? "Uploading resume…"
                 : applyState === "submitting"
@@ -157,10 +157,10 @@ export function ListingDetailPage() {
             </button>
           </form>
         ) : status === "signed-in" ? (
-          <p className="text-sm text-slate-500">Only applicants can apply to listings.</p>
+          <p className="text-sm text-stone-500">Only applicants can apply to listings.</p>
         ) : (
-          <p className="text-sm text-slate-500">
-            <Link to="/login" className="font-medium text-indigo-600 underline">
+          <p className="text-sm text-stone-500">
+            <Link to="/login" className="font-medium text-emerald-600 underline">
               Log in
             </Link>{" "}
             as an applicant to apply.

@@ -39,6 +39,10 @@ Open `http://localhost:5173`, register as a poster in one browser tab and an app
 log out/in between) to try the full flow: post a listing → browse/search for it → apply with a resume
 PDF → move the application through the pipeline.
 
+Deploying this (Vercel + Atlas)? See [`DEPLOYMENT.md`](DEPLOYMENT.md) — a few things (resume upload
+storage, the in-memory rate limiter, serverless DB connection handling) need real code changes first,
+not just environment variables; the guide is explicit about which is which.
+
 ## Testing
 
 ```bash

@@ -1,0 +1,156 @@
+# Deployment Guide — Vercel + MongoDB Atlas
+
+This app was originally built and tested as a long-lived Express process talking to a local MongoDB.
+Deploying to Vercel (serverless) + Atlas (managed Mongo) needed two real code changes first — both are
+now done (see "Code changes already made" below) — plus config/environment setup, which is what this
+checklist walks through. This deploy is scoped for a low-traffic, resume/portfolio site, not a
+production service under real load — a couple of items below are called out as intentionally skipped for
+that reason.
+
+## Pick your architecture first
+
+**Option A — one Vercel project, frontend + backend together (recommended)**
+Frontend (static Vite build) and backend (Express wrapped as a serverless function) live in the *same*
+Vercel project and the *same* domain, with `vercel.json` rewriting `/api/*` to the backend function.
+Same-origin means: no CORS to configure, the frontend's existing `baseURL: "/api"` in
+`src/api/client.js` needs **no code change**, and the refresh cookie's `sameSite: "strict"` keeps working
+exactly as it does today. This is the path this guide assumes unless noted otherwise.
+
+**Option B — two separate Vercel projects** (frontend on one domain, backend on another)
+More moving parts: you must set a real CORS origin, switch the frontend's API base URL to an absolute
+URL, and change the refresh cookie's `sameSite` from `"strict"` to `"none"` (which also forces
+`secure: true`, i.e. HTTPS-only — fine on Vercel, just noting it's a real behavior change). Only choose
+this if you have a specific reason to. Callouts below are marked **[Option B only]** where they apply.
+
+---
+
+## Code changes already made (nothing left to do here)
+
+- **Resume upload storage** (`backend/src/services/storage.service.js`): `saveFile()` now uses
+  **Vercel Blob** when a `BLOB_READ_WRITE_TOKEN` env var is present, and falls back to local disk
+  otherwise (local dev/tests — no token needed there, it just works as before). This was required: Vercel's
+  serverless filesystem is read-only/ephemeral outside `/tmp`, so the old local-disk-only version would
+  have made every uploaded resume vanish and its link 404. `upload.controller.js` was updated to `await`
+  the now-async `saveFile()`.
+- **Serverless entrypoint** (`backend/api/index.js`): wraps the Express app as a `(req, res)` handler and
+  connects to MongoDB once when the module loads (reused across warm invocations on the same instance —
+  not reconnecting per request, but no further caching machinery beyond that, since this app's traffic
+  doesn't warrant it).
+- **Skipped on purpose:** further Mongo connection-pool tuning/caching beyond the above. This site will
+  see very little traffic — there's no cold-start storm to defend against here. If that ever changes,
+  it's a small addition to `backend/src/config/db.js`, not a redesign.
+- **Skipped on purpose:** fixing the in-memory rate limiter's per-instance-not-global behavior under
+  serverless scaling (see `agent-comms/DECISIONS.md`). At this traffic level it's a non-issue — the limiter
+  still does its job of stopping accidental double-submits/scripted abuse from a single visitor, which is
+  all it needs to do here.
+
+## Checklist
+
+### 1. MongoDB Atlas
+- [ ] Create a free (M0) cluster.
+- [ ] Create a database user (Atlas → Database Access) with a strong, generated password — not one you
+      reuse elsewhere.
+- [ ] Network access: add `0.0.0.0/0` (allow from anywhere). Vercel serverless functions don't have
+      static outbound IPs on the free/hobby tier, so you can't IP-allowlist Vercel specifically — Atlas's
+      own auth (username/password + TLS) is your actual security boundary here, not IP allowlisting.
+- [ ] Grab the connection string (Atlas → Connect → Drivers → Node.js). It looks like
+      `mongodb+srv://<user>:<password>@<cluster>.mongodb.net/jobboard?retryWrites=true&w=majority`.
+      Make sure the database name (`jobboard`, or whatever you pick) is in the path — Atlas's copy-paste
+      string sometimes omits it.
+
+### 2. GitHub
+- [ ] Push this repo to a GitHub repo (if it isn't already) — Vercel's normal flow is "import from
+      GitHub," which also gives you automatic preview deployments on every PR and a production deploy on
+      every push to `main`, with no extra CLI steps needed.
+
+### 3. Vercel Blob (for resume uploads)
+- [ ] In your Vercel project (create it in step 5 first if you haven't) → Storage → create a **Blob**
+      store. Vercel gives you a `BLOB_READ_WRITE_TOKEN` — copy it for step 4.
+
+### 4. Environment variables
+Set these in Vercel (Project Settings → Environment Variables), for both Production and Preview:
+- [ ] `MONGO_URI` — the Atlas connection string from step 1.
+- [ ] `JWT_ACCESS_SECRET` — **generate a real one**, don't reuse the `change-me` placeholder from
+      `.env.example`: `openssl rand -base64 48`.
+- [ ] `JWT_REFRESH_SECRET` — same, a **different** random value from the access secret.
+- [ ] `ACCESS_TOKEN_TTL` — `15m` (or your preference).
+- [ ] `REFRESH_TOKEN_TTL` — `30d` (or your preference).
+- [ ] `BLOB_READ_WRITE_TOKEN` — from step 3.
+- [ ] `CORS_ORIGIN` — **[Option B only]**: your frontend's deployed URL (e.g.
+      `https://your-app.vercel.app`). **[Option A]**: irrelevant, same-origin means CORS isn't in play.
+- [ ] `NODE_ENV=production` — Vercel sets this automatically; this is what flips the refresh cookie's
+      `secure: true`, no action needed, just noting why it matters.
+
+### 5. Vercel project setup
+**[Option A — one project]**
+- [ ] Import the GitHub repo into Vercel.
+- [ ] Root directory: repo root (not `frontend/`), since you need both `frontend/` and `backend/api/` in
+      the build.
+- [ ] Add a `vercel.json` at the repo root:
+      ```json
+      {
+        "buildCommand": "cd frontend && npm install && npm run build",
+        "outputDirectory": "frontend/dist",
+        "functions": { "backend/api/index.js": { "includeFiles": "backend/src/**" } },
+        "rewrites": [
+          { "source": "/api/(.*)", "destination": "/backend/api/index.js" },
+          { "source": "/uploads/(.*)", "destination": "/backend/api/index.js" }
+        ]
+      }
+      ```
+      (The `/uploads` rewrite is a harmless no-op once `BLOB_READ_WRITE_TOKEN` is set — Blob returns
+      absolute URLs, not `/uploads/...` paths, so that route just never gets hit in production. Keeping it
+      costs nothing and preserves local-dev behavior.)
+- [ ] Set all env vars from step 4 on this one project.
+
+**[Option B — two projects]**
+- [ ] Frontend project: root directory `frontend/`, standard Vite build. Set
+      `VITE_API_URL=https://your-backend.vercel.app` as an env var, and change
+      `frontend/src/api/client.js`'s `baseURL: "/api"` to `` baseURL: `${import.meta.env.VITE_API_URL}/api` ``
+      **(code change — not done, only needed if you pick Option B)**.
+- [ ] Backend project: root directory `backend/`, needs its own minimal `vercel.json` pointing at
+      `api/index.js` as the function.
+- [ ] Change `backend/src/controllers/auth.controller.js`'s `refreshCookieOptions.sameSite` from
+      `"strict"` to `"none"` **(code change — not done, only needed if you pick Option B)** — required for
+      the cookie to be sent on cross-origin requests between the two domains. `secure` is already
+      conditional on `NODE_ENV`, so it correctly becomes `true` in production (required alongside
+      `sameSite: "none"` — browsers reject `SameSite=None` cookies without `Secure`).
+- [ ] Set `CORS_ORIGIN` on the backend project to the frontend's exact deployed URL.
+
+### 6. Deploy
+- [ ] Vercel deploys automatically on push once the GitHub repo is connected — push to `main` (or
+      whichever branch you configured as production) and watch the deployment in the Vercel dashboard.
+- [ ] Watch the build logs for the frontend build and the function build separately — a failure in one
+      doesn't always surface clearly in the other's log.
+
+### 7. Post-deploy smoke test (do this for real, don't assume)
+- [ ] Visit the deployed frontend URL — browse page loads, listings (if any — fresh Atlas DB starts
+      empty) render without console errors.
+- [ ] Register a poster account. Confirm the response sets a cookie (check DevTools → Application →
+      Cookies) and an access token comes back.
+- [ ] Hard-refresh the page while logged in — confirm the session survives (exercises the
+      `/auth/refresh` → `/auth/me` flow against the *real* deployed cookie).
+- [ ] Create a listing, log in as an applicant, apply with a real PDF — confirm the upload succeeds and
+      the returned resume URL is actually fetchable. This is the step that would have silently failed
+      without the Blob storage change — worth checking explicitly rather than assuming.
+- [ ] Move an application through the pipeline as the poster.
+- [ ] Check Vercel's function logs (Project → Deployments → your deployment → Functions) for any
+      unhandled errors during the above.
+
+### 8. If something's broken
+- [ ] 500s on every request, immediately: almost always `MONGO_URI` wrong/missing, or Atlas network
+      access not actually saved.
+- [ ] Login works but refresh/reload logs you out: cookie isn't being set or read — check `sameSite`/
+      `secure` match your architecture choice (A vs B) and that you're testing over HTTPS (Vercel always
+      serves HTTPS).
+- [ ] Uploads "succeed" but the resume link 404s later: `BLOB_READ_WRITE_TOKEN` isn't set in Vercel's env
+      vars, or wasn't set at the time of that deployment (redeploy after adding it).
+- [ ] Everything works locally in preview but not production (or vice versa): double check env vars are
+      set for *both* Preview and Production in Vercel's dashboard — they're separate.
+
+---
+
+## What's genuinely optional
+- The Redis-caching item from `agent-comms/PLAN.md`'s "Optional / Deferred" section is still optional —
+  nothing above requires it.
+- Frontend tests still don't exist (noted in `README.md`) — not a deployment blocker.

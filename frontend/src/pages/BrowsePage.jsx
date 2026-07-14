@@ -66,8 +66,8 @@ export function BrowsePage() {
 
   return (
     <main className="page-container">
-      <h1 className="text-3xl font-bold text-slate-900">Browse listings</h1>
-      <p className="mt-1 text-slate-500">Search and filter open positions.</p>
+      <h1 className="text-3xl font-bold text-stone-900">Browse listings</h1>
+      <p className="mt-1 text-stone-500">Search and filter open positions.</p>
 
       <form onSubmit={handleSubmit} className="card mt-6 grid gap-3 p-4 sm:grid-cols-3">
         <input
@@ -97,10 +97,10 @@ export function BrowsePage() {
       </form>
 
       <div className="mt-8 space-y-4">
-        {status === "loading" && <p className="text-slate-500">Loading…</p>}
+        {status === "loading" && <p className="text-stone-500">Loading…</p>}
         {status === "error" && <p className="text-red-600">{error}</p>}
         {status !== "loading" && items.length === 0 && (
-          <p className="text-slate-500">No listings match your search.</p>
+          <p className="text-stone-500">No listings match your search.</p>
         )}
         {items.map((listing) => (
           <ListingCard key={listing._id} listing={listing} />
