@@ -251,3 +251,30 @@ for not fully fixing the reported bug. Keeping `$text` for `search` and adding r
 `location` — rejected for inconsistency: the bug report was "all 3 search bars," and users don't
 distinguish "the text-indexed field" from "the exact-match fields" — they just expect typing a substring
 to work everywhere it looks like a text input.
+
+## Serverless entrypoint location + missing root package.json — real bug found during first deploy attempt
+**What happened:** The first version of `DEPLOYMENT.md` (written before ever actually deploying) told the
+reader to put the Vercel serverless entrypoint at `backend/api/index.js`. On the first real deploy
+attempt, Vercel's build failed: *"The pattern `backend/api/index.js` defined in `functions` doesn't match
+any Serverless Functions inside the `api` directory."* Root cause: Vercel only auto-discovers Serverless
+Functions in a literal top-level `api/` directory relative to the project's Root Directory — a nested path
+is invisible to that discovery step no matter how it's referenced in `vercel.json`'s `functions` key. The
+entrypoint was moved to `api/index.js` at the repo root to fix this — which immediately surfaced a second,
+related bug: nothing at the repo root had ever needed a `package.json` before, so there was none, and
+`api/index.js`'s ESM `import`/`export` syntax got parsed as CommonJS and failed to load. Since every API
+route goes through this one function, that failure took down every route identically (`/api/auth/register`,
+`/api/auth/refresh`, `/api/listings`, all failing the same way — which is itself a useful diagnostic
+signal: identical failures across otherwise-unrelated routes point at the shared entrypoint, not
+route-specific logic).
+**Fix:** `api/index.js` lives at the repo root (not `backend/`) and directly imports `createApp`/
+`connectDB` from `../backend/src/...`; a minimal root `package.json` (`{ "type": "module" }`) was added
+alongside it. An earlier intermediate fix (from a different agent, Antigravity) worked around the first
+bug by moving a *stub* to `api/index.js` at the root that re-exported from `backend/api/index.js` — this
+satisfied Vercel's discovery step but still needed the root `package.json` fix, and left a redundant
+two-file indirection; consolidated to one file to remove that indirection.
+**Why this is worth keeping in the record:** it's a real example of "deploy target conventions you can't
+know until you try deploying" — the local dev/test setup (Jest + Supertest hitting `createApp()` directly,
+`node --watch src/index.js` for local `npm run dev`) never exercises the serverless entrypoint at all, so
+none of this could have been caught by the test suite. It was only caught by actually deploying and reading
+the real error message — a good concrete answer if asked "what broke in production that tests didn't
+catch, and why."

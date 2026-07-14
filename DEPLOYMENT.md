@@ -32,10 +32,25 @@ this if you have a specific reason to. Callouts below are marked **[Option B onl
   serverless filesystem is read-only/ephemeral outside `/tmp`, so the old local-disk-only version would
   have made every uploaded resume vanish and its link 404. `upload.controller.js` was updated to `await`
   the now-async `saveFile()`.
-- **Serverless entrypoint** (`backend/api/index.js`): wraps the Express app as a `(req, res)` handler and
-  connects to MongoDB once when the module loads (reused across warm invocations on the same instance —
-  not reconnecting per request, but no further caching machinery beyond that, since this app's traffic
-  doesn't warrant it).
+- **Serverless entrypoint** (`api/index.js` at the **repo root** — not `backend/api/`, see the callout
+  below): wraps the Express app as a `(req, res)` handler and connects to MongoDB once when the module
+  loads (reused across warm invocations on the same instance — not reconnecting per request, but no
+  further caching machinery beyond that, since this app's traffic doesn't warrant it).
+- **Root `package.json`** (`{ "type": "module" }`): required alongside the entrypoint above — without it,
+  `api/index.js`'s ESM `import`/`export` syntax gets parsed as CommonJS and fails to load, which breaks
+  *every* route identically (they all go through this one function). This bit us for real on the first
+  deploy attempt — see the callout below.
+
+> **Real gotcha hit during the first deploy attempt, worth understanding:** Vercel only auto-discovers
+> Serverless Functions in a literal top-level `api/` directory, relative to the project's Root Directory
+> — a path like `backend/api/index.js` is invisible to that discovery step even when explicitly named in
+> `vercel.json`'s `functions` key. The first version of this guide got that wrong (told you to put the
+> entrypoint at `backend/api/index.js`), which produced exactly this build error: *"The pattern
+> `backend/api/index.js` defined in `functions` doesn't match any Serverless Functions inside the `api`
+> directory."* The fix was moving the entrypoint to `api/index.js` at the repo root — which then hit the
+> second issue above (no root `package.json` to declare ESM) since nothing at the root had ever needed
+> one before. Both are fixed now; this note is here so future-you (or an interview question about
+> debugging a real deploy) has the actual story, not a sanitized one.
 - **Skipped on purpose:** further Mongo connection-pool tuning/caching beyond the above. This site will
   see very little traffic — there's no cold-start storm to defend against here. If that ever changes,
   it's a small addition to `backend/src/config/db.js`, not a redesign.
@@ -82,25 +97,31 @@ Set these in Vercel (Project Settings → Environment Variables), for both Produ
       `secure: true`, no action needed, just noting why it matters.
 
 ### 5. Vercel project setup
-**[Option A — one project]**
-- [ ] Import the GitHub repo into Vercel.
-- [ ] Root directory: repo root (not `frontend/`), since you need both `frontend/` and `backend/api/` in
-      the build.
-- [ ] Add a `vercel.json` at the repo root:
+**[Option A — one project]** — already set up this way in the repo, nothing left to do here except set
+env vars:
+- [x] Root `package.json` (`{ "type": "module" }`) — required so `api/index.js`'s ESM syntax parses
+      correctly. Already added.
+- [x] `api/index.js` at the repo root — the actual serverless entrypoint. Must stay at the repo root,
+      not under `backend/` (see the callout above for why).
+- [x] `vercel.json` at the repo root:
       ```json
       {
-        "buildCommand": "cd frontend && npm install && npm run build",
+        "buildCommand": "cd frontend && npm install && npm run build && cd ../backend && npm install",
         "outputDirectory": "frontend/dist",
-        "functions": { "backend/api/index.js": { "includeFiles": "backend/src/**" } },
+        "functions": { "api/index.js": { "includeFiles": "backend/src/**" } },
         "rewrites": [
-          { "source": "/api/(.*)", "destination": "/backend/api/index.js" },
-          { "source": "/uploads/(.*)", "destination": "/backend/api/index.js" }
+          { "source": "/api/(.*)", "destination": "/api/index.js" },
+          { "source": "/uploads/(.*)", "destination": "/api/index.js" }
         ]
       }
       ```
       (The `/uploads` rewrite is a harmless no-op once `BLOB_READ_WRITE_TOKEN` is set — Blob returns
       absolute URLs, not `/uploads/...` paths, so that route just never gets hit in production. Keeping it
-      costs nothing and preserves local-dev behavior.)
+      costs nothing and preserves local-dev behavior. The `buildCommand` also runs `npm install` inside
+      `backend/` so its dependencies — express, mongoose, etc. — are on disk when Vercel traces
+      `api/index.js`'s imports.)
+- [ ] Import the GitHub repo into Vercel, with Root Directory left as the repo root (not `frontend/`),
+      since the build needs to see both `frontend/` and `api/`.
 - [ ] Set all env vars from step 4 on this one project.
 
 **[Option B — two projects]**
