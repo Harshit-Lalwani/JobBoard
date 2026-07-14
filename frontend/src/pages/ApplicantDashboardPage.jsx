@@ -23,17 +23,17 @@ export function ApplicantDashboardPage() {
   }, []);
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-10">
-      <h1 className="text-2xl font-semibold">My applications</h1>
-      <p className="mt-1 text-gray-500">Welcome, {user?.name}.</p>
+    <main className="page-container max-w-2xl">
+      <h1 className="text-3xl font-bold text-slate-900">My applications</h1>
+      <p className="mt-1 text-slate-500">Welcome, {user?.name}.</p>
 
       <div className="mt-8 space-y-4">
-        {status === "loading" && <p className="text-gray-500">Loading…</p>}
+        {status === "loading" && <p className="text-slate-500">Loading…</p>}
         {status === "error" && <p className="text-red-600">{error}</p>}
         {status === "ready" && applications.length === 0 && (
-          <p className="text-gray-500">
+          <p className="text-slate-500">
             You haven't applied to anything yet.{" "}
-            <Link to="/" className="underline">
+            <Link to="/" className="font-medium text-indigo-600 underline">
               Browse listings
             </Link>
             .
@@ -41,21 +41,24 @@ export function ApplicantDashboardPage() {
         )}
 
         {applications.map((app) => (
-          <div key={app._id} className="rounded border border-gray-200 p-4">
+          <div key={app._id} className="card p-4">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <Link to={`/listings/${app.listingId?._id}`} className="font-semibold hover:underline">
+                <Link
+                  to={`/listings/${app.listingId?._id}`}
+                  className="font-semibold text-slate-900 hover:text-indigo-600 hover:underline"
+                >
                   {app.listingId?.title ?? "Listing no longer available"}
                 </Link>
-                <p className="text-sm text-gray-500">{app.listingId?.location}</p>
+                <p className="text-sm text-slate-500">{app.listingId?.location}</p>
               </div>
               <StatusBadge status={app.status} />
             </div>
 
-            <ol className="mt-3 space-y-1 border-t border-gray-100 pt-3 text-xs text-gray-500">
+            <ol className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-xs text-slate-500">
               {app.statusHistory?.map((entry, i) => (
                 <li key={i}>
-                  <span className="font-medium text-gray-700">{entry.status}</span> —{" "}
+                  <span className="font-medium text-slate-700">{entry.status}</span> —{" "}
                   {new Date(entry.changedAt).toLocaleString()}
                 </li>
               ))}

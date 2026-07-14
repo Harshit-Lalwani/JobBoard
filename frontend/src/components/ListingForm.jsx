@@ -33,63 +33,55 @@ export function ListingForm({ initial, onSubmit, onCancel, submitLabel }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-gray-200 p-4">
+    <form onSubmit={handleSubmit} className="card space-y-3 p-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700">Title</label>
+        <label className="block text-sm font-medium text-slate-700">Title</label>
         <input
           type="text"
           required
           value={form.title}
           onChange={(e) => setForm({ ...form, title: e.target.value })}
-          className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+          className="input-field mt-1"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700">Description</label>
+        <label className="block text-sm font-medium text-slate-700">Description</label>
         <textarea
           required
           rows={3}
           value={form.description}
           onChange={(e) => setForm({ ...form, description: e.target.value })}
-          className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+          className="input-field mt-1"
         />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Location</label>
+          <label className="block text-sm font-medium text-slate-700">Location</label>
           <input
             type="text"
             required
             value={form.location}
             onChange={(e) => setForm({ ...form, location: e.target.value })}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+            className="input-field mt-1"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700">Tags (comma-separated)</label>
+          <label className="block text-sm font-medium text-slate-700">Tags (comma-separated)</label>
           <input
             type="text"
             value={form.tags}
             onChange={(e) => setForm({ ...form, tags: e.target.value })}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+            className="input-field mt-1"
           />
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded bg-gray-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-        >
+        <button type="submit" disabled={submitting} className="btn-primary">
           {submitting ? "Saving…" : submitLabel}
         </button>
         {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded border border-gray-300 px-4 py-2 text-sm"
-          >
+          <button type="button" onClick={onCancel} className="btn-secondary">
             Cancel
           </button>
         )}

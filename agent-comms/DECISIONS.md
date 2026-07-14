@@ -216,3 +216,32 @@ multer itself rather than swapping one small module; rejected given the spec exp
 S3-swap-friendliness. Storing the file as a Buffer directly in MongoDB (e.g. on the `Application` document)
 — rejected, bloats the database with binary blobs and defeats the point of a URL-based `resumeUrl` field
 that's already in the Phase 1 schema.
+
+## Switching listing search/filters from exact/`$text` matching to substring regex — revised post-launch by CC
+**Decision:** `GET /api/listings`'s `search`, `tags`, and `location` params now all match as
+case-insensitive **substrings** using escaped regexes (`new RegExp(escapeRegExp(input), "i")`), replacing
+the original Phase 5 design where `search` used MongoDB's `$text` index and `tags`/`location` were exact
+matches (`$in`/equality).
+**Why:** User testing surfaced that typing a prefix like "ma" into any of the three filter fields returned
+nothing — you had to type the whole word ("machine") for a hit. That's actually correct behavior for
+`$text` (it indexes and matches whole tokens, with stemming, not substrings) and for `$in`/equality (exact
+value match only) — but it's not what a live search-as-you-type box is expected to do, and it's a genuine
+UX bug for this app's actual usage. Regex substring matching fixes all three fields with the same
+technique. User input is escaped (`escapeRegExp`) before being embedded in a `RegExp` so that metacharacters
+in a search term (e.g. `.`, `(`, `[`) can't throw a `SyntaxError` or match more broadly than intended.
+**Tradeoff, stated plainly for interview purposes:** this is a conscious step *away* from what the index
+design actually optimizes for. The Phase 1 text index (`listing_text_search`) is no longer queried at all
+by this code path — an unanchored regex like `/ma/i` cannot use a text index (or a regular one) the way an
+anchored prefix or exact match could, so this query now falls back to a collection scan on `title`/
+`description` for the search field, and doesn't get index support on `tags`/`location` either once those
+became regexes instead of exact/`$in` matches. For this app's scale (a portfolio project's dataset), that's
+an acceptable tradeoff for correct UX. At real scale, the honest fix is a dedicated search solution (MongoDB
+Atlas Search, Elasticsearch, or a n-gram/prefix index) rather than regex scans — worth being able to say
+outright in an interview rather than presenting the regex approach as the "correct" scalable answer.
+**Alternatives considered:** Anchored prefix regex (`^ma`) instead of unanchored substring — *would* be
+able to use a regular (non-text) index if one existed on `title`, but doesn't match "machine" if the user
+types a substring that isn't a prefix (e.g. "chine"), which is a real expectation for a search box; rejected
+for not fully fixing the reported bug. Keeping `$text` for `search` and adding regex only for `tags`/
+`location` — rejected for inconsistency: the bug report was "all 3 search bars," and users don't
+distinguish "the text-indexed field" from "the exact-match fields" — they just expect typing a substring
+to work everywhere it looks like a text input.

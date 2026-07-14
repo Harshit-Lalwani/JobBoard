@@ -38,9 +38,9 @@ export function ListingDetailPage() {
 
   if (loadError) {
     return (
-      <main className="px-6 py-10">
+      <main className="page-container max-w-2xl">
         <p className="text-red-600">{loadError}</p>
-        <Link to="/" className="mt-4 inline-block text-sm underline">
+        <Link to="/" className="mt-4 inline-block text-sm text-indigo-600 underline">
           Back to listings
         </Link>
       </main>
@@ -48,66 +48,107 @@ export function ListingDetailPage() {
   }
 
   if (!listing) {
-    return <main className="px-6 py-10 text-gray-500">Loading…</main>;
+    return <main className="page-container max-w-2xl text-slate-500">Loading…</main>;
   }
 
   const canApply = status === "signed-in" && user?.role === "applicant";
+  const isBusy = applyState === "uploading" || applyState === "submitting";
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-10">
-      <Link to="/" className="text-sm text-gray-500 underline">
-        Back to listings
+    <main className="page-container max-w-2xl">
+      <Link to="/" className="text-sm text-slate-500 hover:text-indigo-600">
+        ← Back to listings
       </Link>
-      <h1 className="mt-4 text-2xl font-semibold">{listing.title}</h1>
-      <p className="mt-1 text-gray-500">{listing.location}</p>
+      <h1 className="mt-4 text-3xl font-bold text-slate-900">{listing.title}</h1>
+      <p className="mt-1 text-slate-500">{listing.location}</p>
       {listing.tags?.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-2">
           {listing.tags.map((tag) => (
-            <li key={tag} className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
+            <li key={tag} className="tag-pill">
               {tag}
             </li>
           ))}
         </ul>
       )}
-      <p className="mt-6 whitespace-pre-wrap text-gray-800">{listing.description}</p>
+      <p className="mt-6 whitespace-pre-wrap leading-relaxed text-slate-700">{listing.description}</p>
 
-      <div className="mt-10 border-t border-gray-200 pt-6">
+      <div className="mt-10">
         {applyState === "applied" ? (
-          <p className="text-green-700">Application submitted.</p>
+          <div className="card border-green-200 bg-green-50 p-6 text-center">
+            <p className="font-medium text-green-800">✓ Application submitted.</p>
+          </div>
         ) : canApply ? (
-          <form onSubmit={handleApply} className="space-y-4">
-            <h2 className="text-lg font-semibold">Apply to this listing</h2>
+          <form onSubmit={handleApply} className="card space-y-5 border-indigo-100 bg-indigo-50/40 p-6">
+            <h2 className="text-lg font-semibold text-slate-900">Apply to this listing</h2>
+
             <div>
-              <label htmlFor="resume" className="block text-sm font-medium text-gray-700">
-                Resume (PDF)
+              <label className="mb-2 block text-sm font-medium text-slate-700">Resume (PDF)</label>
+              <label
+                htmlFor="resume"
+                className={`flex cursor-pointer items-center gap-4 rounded-xl border-2 border-dashed p-5 transition ${
+                  resumeFile
+                    ? "border-indigo-400 bg-white"
+                    : "border-indigo-300 bg-white hover:border-indigo-500 hover:bg-indigo-50"
+                }`}
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="h-5 w-5"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 16V4m0 0L7 9m5-5 5 5M5 20h14"
+                    />
+                  </svg>
+                </span>
+                <span className="min-w-0">
+                  {resumeFile ? (
+                    <>
+                      <span className="block truncate font-medium text-slate-900">
+                        {resumeFile.name}
+                      </span>
+                      <span className="text-xs text-indigo-600">Click to choose a different file</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="block font-medium text-indigo-700">
+                        Click to upload your resume
+                      </span>
+                      <span className="text-xs text-slate-500">PDF only, up to 5MB</span>
+                    </>
+                  )}
+                </span>
+                <input
+                  id="resume"
+                  type="file"
+                  accept="application/pdf"
+                  required
+                  onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
+                  className="sr-only"
+                />
               </label>
-              <input
-                id="resume"
-                type="file"
-                accept="application/pdf"
-                required
-                onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
-                className="mt-1 w-full text-sm"
-              />
             </div>
+
             <div>
-              <label htmlFor="coverNote" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="coverNote" className="block text-sm font-medium text-slate-700">
                 Cover note (optional)
               </label>
               <textarea
                 id="coverNote"
                 value={coverNote}
                 onChange={(e) => setCoverNote(e.target.value)}
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+                className="input-field mt-1 bg-white"
                 rows={4}
               />
             </div>
             {applyError && <p className="text-sm text-red-600">{applyError}</p>}
-            <button
-              type="submit"
-              disabled={applyState === "uploading" || applyState === "submitting"}
-              className="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
-            >
+            <button type="submit" disabled={isBusy} className="btn-primary w-full sm:w-auto">
               {applyState === "uploading"
                 ? "Uploading resume…"
                 : applyState === "submitting"
@@ -116,10 +157,10 @@ export function ListingDetailPage() {
             </button>
           </form>
         ) : status === "signed-in" ? (
-          <p className="text-sm text-gray-500">Only applicants can apply to listings.</p>
+          <p className="text-sm text-slate-500">Only applicants can apply to listings.</p>
         ) : (
-          <p className="text-sm text-gray-500">
-            <Link to="/login" className="underline">
+          <p className="text-sm text-slate-500">
+            <Link to="/login" className="font-medium text-indigo-600 underline">
               Log in
             </Link>{" "}
             as an applicant to apply.

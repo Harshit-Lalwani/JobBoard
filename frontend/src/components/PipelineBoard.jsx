@@ -10,6 +10,14 @@ const STATUS_LABELS = {
   rejected: "Rejected",
 };
 
+const COLUMN_HEADER_STYLES = {
+  applied: "bg-slate-100 text-slate-700",
+  shortlisted: "bg-blue-100 text-blue-700",
+  interview: "bg-amber-100 text-amber-700",
+  offer: "bg-green-100 text-green-700",
+  rejected: "bg-red-100 text-red-700",
+};
+
 export function PipelineBoard({ listingId }) {
   const [applications, setApplications] = useState([]);
   const [status, setStatus] = useState("loading"); // loading | ready | error
@@ -42,7 +50,7 @@ export function PipelineBoard({ listingId }) {
   }
 
   if (status === "loading") {
-    return <p className="text-gray-500">Loading applicants…</p>;
+    return <p className="text-slate-500">Loading applicants…</p>;
   }
 
   if (status === "error" && applications.length === 0) {
@@ -50,7 +58,7 @@ export function PipelineBoard({ listingId }) {
   }
 
   if (applications.length === 0) {
-    return <p className="text-gray-500">No applicants yet.</p>;
+    return <p className="text-slate-500">No applicants yet.</p>;
   }
 
   return (
@@ -59,26 +67,28 @@ export function PipelineBoard({ listingId }) {
       <div className="grid gap-4 overflow-x-auto sm:grid-cols-5">
         {APPLICATION_STATUSES.map((columnStatus) => (
           <div key={columnStatus} className="min-w-[180px]">
-            <h3 className="mb-2 text-sm font-semibold text-gray-700">
+            <h3
+              className={`mb-2 rounded-md px-2 py-1 text-center text-sm font-semibold ${COLUMN_HEADER_STYLES[columnStatus]}`}
+            >
               {STATUS_LABELS[columnStatus]}
             </h3>
             <div className="space-y-2">
               {applications
                 .filter((app) => app.status === columnStatus)
                 .map((app) => (
-                  <div key={app._id} className="rounded border border-gray-200 p-3 text-sm">
-                    <p className="font-medium">{app.applicantId?.name}</p>
-                    <p className="text-gray-500">{app.applicantId?.email}</p>
+                  <div key={app._id} className="card p-3 text-sm">
+                    <p className="font-medium text-slate-900">{app.applicantId?.name}</p>
+                    <p className="text-slate-500">{app.applicantId?.email}</p>
                     {app.coverNote && (
-                      <p className="mt-1 line-clamp-3 text-gray-600">{app.coverNote}</p>
+                      <p className="mt-1 line-clamp-3 text-slate-600">{app.coverNote}</p>
                     )}
                     <a
                       href={app.resumeUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="mt-1 inline-block text-xs text-gray-500 underline"
+                      className="mt-1 inline-block text-xs font-medium text-indigo-600 underline"
                     >
-                      Resume
+                      View resume
                     </a>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {getLegalTransitions(app.status).map((nextStatus) => (
@@ -86,7 +96,7 @@ export function PipelineBoard({ listingId }) {
                           key={nextStatus}
                           onClick={() => handleMove(app._id, nextStatus)}
                           disabled={movingId === app._id}
-                          className="rounded border border-gray-300 px-2 py-1 text-xs disabled:opacity-50"
+                          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                         >
                           {STATUS_LABELS[nextStatus]}
                         </button>

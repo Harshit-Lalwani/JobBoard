@@ -2,6 +2,12 @@ import { Listing } from "../models/Listing.js";
 import { ApiError } from "../middleware/errorHandler.js";
 import { encodeCursor, decodeCursor } from "../utils/cursor.js";
 
+// Escapes regex metacharacters in user input before it's used to build a RegExp — without this,
+// a search term like "a.b" or "(" would either match too broadly or throw a SyntaxError.
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export async function createListing(posterId, data) {
   const listing = await Listing.create({
     ...data,
@@ -55,36 +61,49 @@ export async function listMyListings(posterId) {
 export async function listListings(query) {
   const { search, tags, location, status = "open", cursor, limit } = query;
 
-  // Build MongoDB query
+  // Build MongoDB query. Two independent $or clauses (search, cursor) can't both live at
+  // match.$or — collected into $and instead so neither overwrites the other.
   const match = { status };
+  const andConditions = [];
 
-  // Text search: use the text index if a search string is provided
+  // Substring, case-insensitive search on title/description. Note: this is a regex query, not
+  // the $text index search from the original design — see DECISIONS.md for why (the text index
+  // only matches whole tokens, which doesn't support "ma" matching "machine" the way a live
+  // search box needs to).
   if (search) {
-    match.$text = { $search: search };
+    const searchPattern = new RegExp(escapeRegExp(search), "i");
+    andConditions.push({ $or: [{ title: searchPattern }, { description: searchPattern }] });
   }
 
-  // Filter by tags (multikey $in since tags is an array)
+  // Substring, case-insensitive match per tag (so "ma" matches a "machine-learning" tag), not
+  // exact tag equality.
   if (tags && tags.length > 0) {
-    match.tags = { $in: tags };
+    match.tags = { $in: tags.map((tag) => new RegExp(escapeRegExp(tag), "i")) };
   }
 
-  // Filter by location (exact match)
+  // Substring, case-insensitive match on location, not exact equality.
   if (location) {
-    match.location = location;
+    match.location = new RegExp(escapeRegExp(location), "i");
   }
 
   // Cursor pagination: if cursor is provided, only return items after this cursor
   if (cursor) {
     const decodedCursor = decodeCursor(cursor);
     if (decodedCursor) {
-      match.$or = [
-        { createdAt: { $lt: decodedCursor.createdAt } },
-        {
-          createdAt: decodedCursor.createdAt,
-          _id: { $lt: decodedCursor._id },
-        },
-      ];
+      andConditions.push({
+        $or: [
+          { createdAt: { $lt: decodedCursor.createdAt } },
+          {
+            createdAt: decodedCursor.createdAt,
+            _id: { $lt: decodedCursor._id },
+          },
+        ],
+      });
     }
+  }
+
+  if (andConditions.length > 0) {
+    match.$and = andConditions;
   }
 
   // Query with the indexes backing the filters and sort

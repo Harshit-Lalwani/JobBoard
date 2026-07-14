@@ -54,18 +54,15 @@ export function PosterDashboardPage() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-2xl font-semibold">Poster dashboard</h1>
-      <p className="mt-1 text-gray-500">Welcome, {user?.name}.</p>
+    <main className="page-container">
+      <h1 className="text-3xl font-bold text-slate-900">Poster dashboard</h1>
+      <p className="mt-1 text-slate-500">Welcome, {user?.name}.</p>
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">My listings</h2>
+          <h2 className="text-lg font-semibold text-slate-900">My listings</h2>
           {!showCreateForm && (
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="rounded bg-gray-900 px-3 py-1.5 text-sm text-white"
-            >
+            <button onClick={() => setShowCreateForm(true)} className="btn-primary">
               New listing
             </button>
           )}
@@ -81,7 +78,7 @@ export function PosterDashboardPage() {
           </div>
         )}
 
-        {status === "loading" && <p className="mt-4 text-gray-500">Loading…</p>}
+        {status === "loading" && <p className="mt-4 text-slate-500">Loading…</p>}
         {status === "error" && <p className="mt-4 text-red-600">{error}</p>}
 
         <div className="mt-4 space-y-3">
@@ -95,13 +92,19 @@ export function PosterDashboardPage() {
                 submitLabel="Save changes"
               />
             ) : (
-              <div key={listing._id} className="rounded border border-gray-200 p-4">
+              <div key={listing._id} className="card p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h3 className="font-semibold">{listing.title}</h3>
-                    <p className="text-sm text-gray-500">
+                    <h3 className="font-semibold text-slate-900">{listing.title}</h3>
+                    <p className="text-sm text-slate-500">
                       {listing.location} ·{" "}
-                      <span className={listing.status === "open" ? "text-green-700" : "text-gray-500"}>
+                      <span
+                        className={
+                          listing.status === "open"
+                            ? "font-medium text-green-700"
+                            : "font-medium text-slate-500"
+                        }
+                      >
                         {listing.status}
                       </span>
                     </p>
@@ -111,33 +114,24 @@ export function PosterDashboardPage() {
                       onClick={() =>
                         setPipelineListingId(pipelineListingId === listing._id ? null : listing._id)
                       }
-                      className="rounded border border-gray-300 px-2 py-1"
+                      className="btn-secondary px-3 py-1.5"
                     >
                       {pipelineListingId === listing._id ? "Hide applicants" : "View applicants"}
                     </button>
-                    <button
-                      onClick={() => setEditingId(listing._id)}
-                      className="rounded border border-gray-300 px-2 py-1"
-                    >
+                    <button onClick={() => setEditingId(listing._id)} className="btn-secondary px-3 py-1.5">
                       Edit
                     </button>
-                    <button
-                      onClick={() => handleToggleStatus(listing)}
-                      className="rounded border border-gray-300 px-2 py-1"
-                    >
+                    <button onClick={() => handleToggleStatus(listing)} className="btn-secondary px-3 py-1.5">
                       {listing.status === "open" ? "Close" : "Reopen"}
                     </button>
-                    <button
-                      onClick={() => handleDelete(listing._id)}
-                      className="rounded border border-red-300 px-2 py-1 text-red-700"
-                    >
+                    <button onClick={() => handleDelete(listing._id)} className="btn-danger px-3 py-1.5">
                       Delete
                     </button>
                   </div>
                 </div>
 
                 {pipelineListingId === listing._id && (
-                  <div className="mt-4 border-t border-gray-200 pt-4">
+                  <div className="mt-4 border-t border-slate-200 pt-4">
                     <PipelineBoard listingId={listing._id} />
                   </div>
                 )}
@@ -145,7 +139,7 @@ export function PosterDashboardPage() {
             )
           )}
           {status === "ready" && listings.length === 0 && !showCreateForm && (
-            <p className="text-gray-500">You haven't posted any listings yet.</p>
+            <p className="text-slate-500">You haven't posted any listings yet.</p>
           )}
         </div>
       </section>

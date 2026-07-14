@@ -110,6 +110,49 @@ describe("GET /api/listings", () => {
     expect(res.body.items[0].description).toContain("scalable");
   });
 
+  it("matches a substring, not just a whole word (regression: 'ma' should match 'machine')", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ ...listingData, title: "Machine Learning Engineer" });
+
+    const res = await request(app).get("/api/listings?search=ma");
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].title).toBe("Machine Learning Engineer");
+  });
+
+  it("matches tags and location as substrings too, not just exact strings", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send({ ...listingData, tags: ["machine-learning"], location: "San Francisco" });
+
+    const tagRes = await request(app).get("/api/listings?tags=ma");
+    expect(tagRes.status).toBe(200);
+    expect(tagRes.body.items).toHaveLength(1);
+
+    const locationRes = await request(app).get("/api/listings?location=San");
+    expect(locationRes.status).toBe(200);
+    expect(locationRes.body.items).toHaveLength(1);
+  });
+
+  it("does not throw or misbehave when the search/tags/location input contains regex metacharacters", async () => {
+    const posterToken = await registerAndGetToken(posterData);
+    await request(app)
+      .post("/api/listings")
+      .set("Authorization", `Bearer ${posterToken}`)
+      .send(listingData);
+
+    const res = await request(app).get(
+      "/api/listings?search=" + encodeURIComponent("a.b(c)[d]")
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(0);
+  });
+
   it("excludes closed listings from the default browse", async () => {
     const posterToken = await registerAndGetToken(posterData);
     const createRes = await request(app)

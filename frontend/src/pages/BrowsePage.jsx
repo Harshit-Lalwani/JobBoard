@@ -65,44 +65,42 @@ export function BrowsePage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-2xl font-semibold">Browse listings</h1>
+    <main className="page-container">
+      <h1 className="text-3xl font-bold text-slate-900">Browse listings</h1>
+      <p className="mt-1 text-slate-500">Search and filter open positions.</p>
 
-      <form onSubmit={handleSubmit} className="mt-6 grid gap-3 sm:grid-cols-3">
+      <form onSubmit={handleSubmit} className="card mt-6 grid gap-3 p-4 sm:grid-cols-3">
         <input
           type="text"
           placeholder="Search title/description…"
           value={filters.search}
           onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-          className="rounded border border-gray-300 px-3 py-2 sm:col-span-1"
+          className="input-field"
         />
         <input
           type="text"
           placeholder="Tags (comma-separated)"
           value={filters.tags}
           onChange={(e) => setFilters({ ...filters, tags: e.target.value })}
-          className="rounded border border-gray-300 px-3 py-2"
+          className="input-field"
         />
         <input
           type="text"
           placeholder="Location"
           value={filters.location}
           onChange={(e) => setFilters({ ...filters, location: e.target.value })}
-          className="rounded border border-gray-300 px-3 py-2"
+          className="input-field"
         />
-        <button
-          type="submit"
-          className="rounded bg-gray-900 px-4 py-2 text-white sm:col-span-3"
-        >
+        <button type="submit" className="btn-primary sm:col-span-3">
           Search
         </button>
       </form>
 
       <div className="mt-8 space-y-4">
-        {status === "loading" && <p className="text-gray-500">Loading…</p>}
+        {status === "loading" && <p className="text-slate-500">Loading…</p>}
         {status === "error" && <p className="text-red-600">{error}</p>}
         {status !== "loading" && items.length === 0 && (
-          <p className="text-gray-500">No listings match your search.</p>
+          <p className="text-slate-500">No listings match your search.</p>
         )}
         {items.map((listing) => (
           <ListingCard key={listing._id} listing={listing} />
@@ -113,7 +111,7 @@ export function BrowsePage() {
         <button
           onClick={loadMore}
           disabled={status === "loading-more"}
-          className="mt-6 w-full rounded border border-gray-300 px-4 py-2 text-sm disabled:opacity-50"
+          className="btn-secondary mt-6 w-full"
         >
           {status === "loading-more" ? "Loading…" : "Load more"}
         </button>

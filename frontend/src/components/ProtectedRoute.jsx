@@ -9,7 +9,7 @@ export function ProtectedRoute({ roles }) {
 
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center text-gray-500">
+      <div className="flex min-h-screen items-center justify-center text-slate-500">
         Loading…
       </div>
     );
