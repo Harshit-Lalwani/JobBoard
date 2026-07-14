@@ -819,3 +819,51 @@ first)
   history (every phase's rationale, what was verified and how, every design decision with alternatives
   considered) is preserved in `agent-comms/` for anyone — including the user, prepping for an interview —
   to read start to finish.
+
+---
+
+## Post-launch fix — search substring matching + UI polish · CC · 2026-07-13
+Commit range: 23115ba..340cc03
+
+### What I did
+- User feedback after actually using the running app (with seeded data — see below) surfaced a real bug:
+  typing a substring like "ma" into the search box, tags field, or location field returned nothing —
+  only the full word ("machine") worked. This was `$text`/exact-match behaving exactly as designed
+  (Phase 5), just not what a live search box UX needs. Rewrote `listListings` in
+  `backend/src/services/listing.service.js` to use case-insensitive regex substring matching on all
+  three fields (`search` against title/description, `tags` per-tag, `location`), with user input escaped
+  via `escapeRegExp` first so metacharacters can't throw or misbehave. Combined the search-regex `$or` and
+  the existing cursor-pagination `$or` into `$and` so neither overwrites the other in the query object.
+  3 new tests (substring match regression, tag/location substring match, regex-metacharacter safety).
+  Full tradeoff writeup in `DECISIONS.md` — this is a real step away from what the Phase 1 indexes
+  actually optimize for, stated plainly rather than glossed over.
+- Second piece of feedback: "UI looks very plain, resume upload should be clearly visible." Added a
+  shared mini design system to `frontend/src/index.css` (`.btn-primary`, `.btn-secondary`, `.btn-danger`,
+  `.input-field`, `.card`, `.page-container`, `.tag-pill` via Tailwind `@layer components`) and applied it
+  across every page/component, replacing each file's previously ad hoc gray-scale utility classes with a
+  consistent indigo/slate palette. Rebuilt the resume upload control in `ListingDetailPage` from a bare
+  native `<input type="file">` into a full-width dashed-border dropzone (icon, "Click to upload your
+  resume," shows the filename once selected) inside an accent-colored card — the previous version was a
+  genuinely easy-to-miss default browser file input.
+- Verified live against the already-running dev servers (no restart needed for frontend — Vite HMR picked
+  up every change; backend's `node --watch` restarted once for the service-layer change) and against the
+  real seeded data from the mock-data subagent: confirmed `search=Eng`, `search=ma`, `tags=react`, and
+  `location=San` all now return substring matches against actual seeded listing titles/tags/locations.
+
+### Diff check against previous entry
+- Confirmed: `git diff 1b142bb..23115ba --stat` (Phase 13 part 2's actual diff) matched that entry —
+  `README.md` only, no code changes, consistent with it being a documentation-only phase.
+
+### Decisions made (already in DECISIONS.md)
+- The `$text`/exact-match → regex-substring switch and its honest tradeoffs (loses index support for the
+  search/filter query path; documented what the real scalable answer would be instead of presenting regex
+  as if it were the correct long-term solution).
+
+### Open questions / blockers for the next agent
+- None blocking. This was a direct response to user testing feedback on the already-complete app, not a
+  new phase. The same "no next agent" note from the prior entry still holds — this just closes out two
+  concrete bugs/gaps the user found by actually clicking through it.
+
+### Exit criteria met?
+- Yes. Both reported issues fixed and verified live against real (seeded) data, not just unit tests.
+  Backend 111/111, frontend builds and lints clean.
