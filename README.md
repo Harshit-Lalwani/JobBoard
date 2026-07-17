@@ -9,9 +9,10 @@ Full original spec: [`Initial_prompt.md`](Initial_prompt.md).
 
 ## Stack
 
-- **Backend:** Node.js + Express, MongoDB + Mongoose, JWT auth (access + refresh), bcrypt, multer
+- **Backend:** Node.js + Express, MongoDB + Mongoose, JWT auth (access + refresh), bcrypt, multer,
+  Google Cloud Storage (resume uploads)
 - **Frontend:** React (Vite), React Router, Tailwind CSS v4, Axios
-- **Tests:** Jest + Supertest (backend only — 108 tests, see [Testing](#testing))
+- **Tests:** Jest + Supertest (backend only — 116 tests, see [Testing](#testing))
 
 ## Setup
 
@@ -27,6 +28,12 @@ npm install
 npm run dev                 # http://localhost:4000 — GET /health should return {"status":"ok"}
 ```
 
+Resume uploads work with zero extra setup — leave the storage vars in `.env` blank and uploads land on
+local disk. Want them on Google Cloud Storage locally too (matching prod)? Set `GCS_BUCKET` and either
+`GOOGLE_APPLICATION_CREDENTIALS` (path to a service-account key file) or `GOOGLE_APPLICATION_CREDENTIALS_JSON`
+(the key file's contents, one line) in `.env` — see the comments in `.env.example` for both forms and
+`DEPLOYMENT.md` for the one-time GCP setup (bucket, IAM, service account).
+
 **Frontend** (separate terminal)
 
 ```bash
@@ -39,9 +46,11 @@ Open `http://localhost:5173`, register as a poster in one browser tab and an app
 log out/in between) to try the full flow: post a listing → browse/search for it → apply with a resume
 PDF → move the application through the pipeline.
 
-Deploying this (Vercel + Atlas)? See [`DEPLOYMENT.md`](DEPLOYMENT.md) — a few things (resume upload
-storage, the in-memory rate limiter, serverless DB connection handling) need real code changes first,
-not just environment variables; the guide is explicit about which is which.
+Deploying this (Vercel + Atlas + GCS)? See [`DEPLOYMENT.md`](DEPLOYMENT.md) — resume storage (GCS/Vercel
+Blob) and the serverless entrypoint are already implemented, so most of what's left is account/environment
+setup (GCP bucket + IAM, Atlas cluster, Vercel env vars), not code. The guide is explicit about which is
+which, and about the one thing still a known, accepted limitation rather than fixed: the in-memory rate
+limiter doesn't coordinate across serverless instances.
 
 ## Testing
 
@@ -51,6 +60,11 @@ npm test        # Jest + Supertest, runs against an ephemeral in-memory MongoDB 
                  # no real database needed to run the suite
 npm run lint
 ```
+
+`npm test` never touches real cloud storage either, even if your local `.env` has real GCS/Blob
+credentials in it — `tests/setupEnv.js` blanks those vars out before dotenv loads, so every test run
+deterministically exercises the local-disk fallback in `storage.service.js`. (This wasn't always true —
+see [`agent-comms/DECISIONS.md`](agent-comms/DECISIONS.md) for the bug this fixed, and why.)
 
 ```bash
 cd frontend
