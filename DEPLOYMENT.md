@@ -26,9 +26,10 @@ this if you have a specific reason to. Callouts below are marked **[Option B onl
 
 ## Code changes already made (nothing left to do here)
 
-- **Resume upload storage** (`backend/src/services/storage.service.js`): `saveFile()` now uses
-  **Vercel Blob** when a `BLOB_READ_WRITE_TOKEN` env var is present, and falls back to local disk
-  otherwise (local dev/tests — no token needed there, it just works as before). This was required: Vercel's
+- **Resume upload storage** (`backend/src/services/storage.service.js`): `saveFile()` tries, in order,
+  **Google Cloud Storage** (`GCS_BUCKET` set — the primary target), then **Vercel Blob**
+  (`BLOB_READ_WRITE_TOKEN` set — fallback for a pure-Vercel deploy with no GCP project), then local disk
+  (dev/tests, nothing configured). This was required regardless of which cloud backend you pick: Vercel's
   serverless filesystem is read-only/ephemeral outside `/tmp`, so the old local-disk-only version would
   have made every uploaded resume vanish and its link 404. `upload.controller.js` was updated to `await`
   the now-async `saveFile()`.
@@ -78,7 +79,28 @@ this if you have a specific reason to. Callouts below are marked **[Option B onl
       GitHub," which also gives you automatic preview deployments on every PR and a production deploy on
       every push to `main`, with no extra CLI steps needed.
 
-### 3. Vercel Blob (for resume uploads)
+### 3. Resume upload storage — pick Google Cloud Storage (primary) or Vercel Blob (fallback)
+
+**Google Cloud Storage** (checked first in code — use this if you have/want a GCP project):
+- [ ] Create or pick a GCP project. Enable the **Cloud Storage API** for it (APIs & Services → Library).
+- [ ] Create a bucket (Cloud Storage → Buckets → Create). Leave **Uniform bucket-level access** ON — it's
+      the default for new buckets, and the code deliberately targets it (no legacy per-object ACL calls).
+- [ ] Grant public read at the **bucket** level, not per-object: bucket → Permissions → Grant Access →
+      principal `allUsers`, role `Storage Object Viewer`. This is what makes uploaded resume URLs
+      (`https://storage.googleapis.com/<bucket>/<file>`) actually loadable — same effect as Vercel Blob's
+      `access: "public"`, just done once at the bucket instead of per-upload.
+- [ ] Create a service account (IAM & Admin → Service Accounts → Create) with **Storage Object Admin** on
+      that bucket (or project-wide if simpler for a single-bucket setup). Create a JSON key for it and
+      download it — **never commit this file to git**.
+- [ ] You now have everything for `GCS_BUCKET` and the credentials env var below. **Important:** don't use
+      `GOOGLE_APPLICATION_CREDENTIALS` (a file path) on Vercel — serverless functions have nowhere durable
+      to put that key file. Open the downloaded JSON key file, copy its *entire contents*, and paste them
+      as the single-line value of `GOOGLE_APPLICATION_CREDENTIALS_JSON` instead (the code checks for this
+      variable first and constructs the client from it directly). `GOOGLE_APPLICATION_CREDENTIALS` (file
+      path) still works for local dev if you'd rather point at the key file on disk than paste its
+      contents into `.env`.
+
+**Vercel Blob** (only needed if you're *not* using GCS — skip if you set up GCS above):
 - [ ] In your Vercel project (create it in step 5 first if you haven't) → Storage → create a **Blob**
       store. Vercel gives you a `BLOB_READ_WRITE_TOKEN` — copy it for step 4.
 
@@ -90,7 +112,9 @@ Set these in Vercel (Project Settings → Environment Variables), for both Produ
 - [ ] `JWT_REFRESH_SECRET` — same, a **different** random value from the access secret.
 - [ ] `ACCESS_TOKEN_TTL` — `15m` (or your preference).
 - [ ] `REFRESH_TOKEN_TTL` — `30d` (or your preference).
-- [ ] `BLOB_READ_WRITE_TOKEN` — from step 3.
+- [ ] **If using GCS:** `GCS_BUCKET` (the bucket name) and `GOOGLE_APPLICATION_CREDENTIALS_JSON` (the
+      service-account key file's full contents, pasted as one line) — from step 3.
+- [ ] **If using Vercel Blob instead:** `BLOB_READ_WRITE_TOKEN` — from step 3.
 - [ ] `CORS_ORIGIN` — **[Option B only]**: your frontend's deployed URL (e.g.
       `https://your-app.vercel.app`). **[Option A]**: irrelevant, same-origin means CORS isn't in play.
 - [ ] `NODE_ENV=production` — Vercel sets this automatically; this is what flips the refresh cookie's
@@ -164,8 +188,12 @@ env vars:
 - [ ] Login works but refresh/reload logs you out: cookie isn't being set or read — check `sameSite`/
       `secure` match your architecture choice (A vs B) and that you're testing over HTTPS (Vercel always
       serves HTTPS).
-- [ ] Uploads "succeed" but the resume link 404s later: `BLOB_READ_WRITE_TOKEN` isn't set in Vercel's env
-      vars, or wasn't set at the time of that deployment (redeploy after adding it).
+- [ ] Uploads "succeed" but the resume link 404s later: whichever storage env vars you're using
+      (`GCS_BUCKET`+`GOOGLE_APPLICATION_CREDENTIALS_JSON`, or `BLOB_READ_WRITE_TOKEN`) aren't set in
+      Vercel, or weren't set at the time of that deployment (redeploy after adding them).
+- [ ] Uploads fail with a permissions/403-style error from GCS specifically: almost always the bucket-level
+      `allUsers` → `Storage Object Viewer` IAM grant from step 3 wasn't actually saved, or the service
+      account is missing `Storage Object Admin` on the bucket.
 - [ ] Everything works locally in preview but not production (or vice versa): double check env vars are
       set for *both* Preview and Production in Vercel's dashboard — they're separate.
 

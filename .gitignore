@@ -6,3 +6,5 @@ build/
 *.log
 .DS_Store
 uploads/
+coverage/
+gen-lang-client-0344141252-ec6d3d9e0b8b.json

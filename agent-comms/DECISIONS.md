@@ -278,3 +278,43 @@ know until you try deploying" — the local dev/test setup (Jest + Supertest hit
 none of this could have been caught by the test suite. It was only caught by actually deploying and reading
 the real error message — a good concrete answer if asked "what broke in production that tests didn't
 catch, and why."
+
+## Third resume-storage backend: Google Cloud Storage, checked ahead of Vercel Blob
+**Decision:** `saveFile()` now tries three backends in order: **GCS** (`GCS_BUCKET` set), **Vercel Blob**
+(`BLOB_READ_WRITE_TOKEN` set), then local disk (neither set — dev/tests). GCS is checked first, so it wins
+if both happen to be configured.
+**Why:** The user wants the deployed resume storage to actually be on GCP — partly a real preference,
+partly because working GCP integration is a more relevant signal than Vercel Blob for the kinds of roles
+this project is on the resume for. The three-backend branch is exactly the shape the original storage
+abstraction (Phase 13, see above) was built to support cheaply: adding a backend means adding one more
+`if` branch and a private helper function, nothing in the upload route/controller/validation changes.
+GCS is checked *before* Blob (not the other way around) since it's the intended primary target — Blob
+remains as a fallback for a pure-Vercel deploy with no GCP project attached, not because it's second-choice
+in general.
+**Two implementation details worth calling out, since the initial task sketch didn't get them right without
+checking the real API surface first** (as instructed — "treat this as a starting sketch, not final code"):
+- **No `.makePublic()` call.** The sketch used the legacy per-object ACL API. Modern GCS buckets default
+  to **Uniform Bucket-Level Access**, which disables per-object ACLs entirely — calling `.makePublic()` on
+  such a bucket throws. Public read is granted once, at the bucket level, via IAM (`allUsers` →
+  `Storage Object Viewer`) instead — a one-time console step (documented in `DEPLOYMENT.md`), not
+  something the app does per upload. This also matches how Vercel Blob's `access: "public"` already
+  behaves elsewhere in this same function, so the two backends have consistent semantics.
+- **Credentials as a JSON env var, not a file path.** `GOOGLE_APPLICATION_CREDENTIALS` (the client
+  library's usual auto-detected env var) is a *file path* — fine for local dev or a GCP-hosted runtime,
+  but Vercel's serverless functions have nowhere durable to put a service-account key file. Added
+  `GOOGLE_APPLICATION_CREDENTIALS_JSON` (the key file's contents, pasted as one env var) as an
+  alternative that takes precedence when set, constructing the `Storage` client with `{ credentials:
+  JSON.parse(...) }` directly instead of relying on file-path lookup. `GOOGLE_APPLICATION_CREDENTIALS`
+  still works unchanged for local dev.
+**Verification:** unit-tested with the `Storage` client mocked (`jest.unstable_mockModule`, since the
+import is a dynamic `await import()` inside the function, not a static one) — covers backend selection
+priority (GCS over Blob when both configured), credential-passing logic (both branches), and per-upload
+filename uniqueness. **Not verified against a real GCS bucket** — no live GCP project/bucket was available
+in this environment. That distinction matters: this is "implemented and unit-tested," not "integrated and
+tested against a live bucket," until someone actually runs it against real GCS credentials per the
+`DEPLOYMENT.md` checklist.
+**Alternatives considered:** Signed URLs instead of a public bucket — more secure (time-limited access
+instead of permanent public read), but adds real complexity (URL expiry means a resume link that worked
+yesterday can 403 today, needs a regeneration strategy) for a portfolio-scale app where resumes aren't
+sensitive enough to justify it; rejected as disproportionate, consistent with the Vercel Blob branch's own
+`access: "public"` choice already made in Phase 13.

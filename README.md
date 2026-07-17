@@ -153,9 +153,13 @@ instances) but proportionate for this project's scope.
 
 **Resume upload: storage isolated behind one function.** `multer.memoryStorage()` only parses the
 multipart request into a buffer; a separate `storage.service.js` (`saveFile(file) -> url`) is the *only*
-code that knows files currently land on local disk. Swapping to S3 later means changing that one
-function's body (buffer → `PutObjectCommand`, return the S3 URL) — the upload route/controller and
-`fileFilter`/size-limit validation don't change at all.
+code that knows how files are actually persisted — the upload route/controller and `fileFilter`/size-limit
+validation never change regardless of backend. Three are wired up today, tried in order: **Google Cloud
+Storage** (`GCS_BUCKET` set — the primary target), **Vercel Blob** (`BLOB_READ_WRITE_TOKEN` set — the
+fallback for a pure-Vercel deploy with no GCP project), then local disk (dev/tests, nothing configured).
+Adding a fourth backend is still the same shape of change: replace this one function's body, nothing else
+moves. See `DEPLOYMENT.md` for the GCS setup steps (bucket IAM, service-account credentials, and why
+Vercel needs the credentials passed as a JSON env var rather than a file path).
 
 **Known, explicit tradeoffs (not oversights):**
 - **Redis caching — deferred, not built.** The spec listed it as optional; skipped for scope reasons.
