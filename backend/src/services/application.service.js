@@ -112,16 +112,33 @@ export async function updateApplicationStatus(applicationId, posterId, data) {
     throw new ApiError(403, "You can only update applications for your own listings");
   }
 
-  // Enforce the legal-transition state machine
-  if (!isLegalTransition(application.status, data.status)) {
-    throw new ApiError(400, `Cannot transition from '${application.status}' to '${data.status}'`);
+  // Enforce the legal-transition state machine against the status we just read.
+  const fromStatus = application.status;
+  if (!isLegalTransition(fromStatus, data.status)) {
+    throw new ApiError(400, `Cannot transition from '${fromStatus}' to '${data.status}'`);
   }
 
-  application.status = data.status;
-  application.statusHistory.push({ status: data.status });
-  await application.save();
+  // Compare-and-swap: the write is guarded by the exact status this request validated the
+  // transition against, not just "the current status, whatever it now is." A plain
+  // read-modify-write here (read status, validate, then blindly write) lets two concurrent
+  // requests both read the same stale status, both pass validation independently, and the second
+  // write silently clobbers the first — including bypassing a terminal state like 'rejected' (see
+  // agent-comms/DECISIONS.md for a live-reproduced example). If another request changed the status
+  // in between our read and this write, `updated` comes back null and we report a clean 409
+  // instead of corrupting statusHistory.
+  const updated = await Application.findOneAndUpdate(
+    { _id: applicationId, status: fromStatus },
+    { $set: { status: data.status }, $push: { statusHistory: { status: data.status } } },
+    { new: true }
+  );
+  if (!updated) {
+    throw new ApiError(
+      409,
+      "This application's status was changed by someone else — please refresh and try again"
+    );
+  }
 
-  return application;
+  return updated;
 }
 
 // Applicant-scoped: all of the current applicant's own applications across every listing they've

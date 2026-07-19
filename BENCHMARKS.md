@@ -49,7 +49,27 @@ The unique index (`Application.js:44`) correctly prevents the duplicate at the s
 409. (The 429s are the existing per-user apply rate limiter correctly doing its job — unrelated to this
 bug, expected here since all 10 requests share one user.)
 
-**After:** _(to be filled in once the Phase 2 fix lands — same command, same before/after discipline)_
+**After:** this exact path (`apply()`) ended up fixed as an incidental side effect of Phase 1's slot-claim
+rewrite, which added local `E11000` handling while building the slot-release compensation logic — before
+Phase 2 (the fix originally scoped for this finding) was even written. Re-verified as a regression test,
+`tests/concurrency/duplicateApply.test.js`: 10 concurrent identical applies from one applicant now
+reliably produce exactly one `201` and nine clean `409`s, never a `500`.
+
+Phase 2's actual new contribution is the *global* `errorHandler.js` branch, demonstrated against a
+still-genuinely-unprotected duplicate-key race: concurrent account registration with the same email
+(`auth.service.js`'s `register()` has the identical unprotected shape `apply()` originally had).
+Verified fail-before/pass-after by isolating just the `errorHandler.js` diff:
+```
+Before (errorHandler.js's E11000 branch stashed out): 10 concurrent identical registrations ->
+  { '500': 9, '201': 1 }   — 9 raw HTTP 500s, driver error leaked in the response body
+
+After (fix restored): 10 concurrent identical registrations ->
+  { '409': 9, '201': 1 }   — exactly one account created, nine clean 409s
+```
+Getting this race to reproduce at all inside a Jest test needed real investigation — see the Phase 2
+entry in `agent-comms/DECISIONS.md` for why a plain `Promise.all` wasn't enough (concurrent
+`findOne`-then-`create()` sequences kept serializing in practice on this fast local database, and an
+artificial delay had to be injected to force genuine interleaving).
 
 ---
 
@@ -77,7 +97,18 @@ independently and the second write silently clobbers the first. This is a genuin
 applicant correctly rejected can end up back in the active pipeline with no record of ever being rejected
 except a `statusHistory` entry that contradicts the current `status`.
 
-**After:** _(to be filled in once the Phase 2 fix lands)_
+**After:** `updateApplicationStatus()` rewritten as a compare-and-swap (`findOneAndUpdate({ _id, status:
+fromStatus }, ...)` — a `null` result means someone else changed the status first). Same command, same
+race, verified via `tests/concurrency/statusTransitionRace.test.js`:
+```
+concurrent conflicting transitions: [ 200, 409 ]
+final status: one of "shortlisted" or "rejected" (whichever won), consistently matching statusHistory
+statusHistory length: 2 (applied + exactly one winning transition — no phantom entries, no
+                          bypassed terminal state)
+```
+Exactly one request wins; the other gets a clean 409 instead of silently corrupting the record.
+Re-verified fail-before by stashing the fix and re-running: reproduces the original `[200, 200]` /
+`shortlisted`-despite-`rejected` result exactly.
 
 ---
 

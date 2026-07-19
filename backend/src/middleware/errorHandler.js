@@ -28,6 +28,22 @@ export function errorHandler(err, req, res, next) {
     return res.status(400).json({ error: { message: err.message } });
   }
 
+  // MongoDB's duplicate-key error (E11000) has no statusCode, so without this it fell through to
+  // the generic 500 branch below — a client error (someone raced a unique constraint) reported as
+  // a server fault, with the raw driver error string leaked in the response body. Most call sites
+  // that can hit this (e.g. apply()) already catch it locally for a more specific message; this is
+  // the generic fallback for any write that doesn't.
+  if (err.code === 11000) {
+    return res.status(409).json({ error: { message: "This record already exists or conflicts with an existing one" } });
+  }
+
+  // Mongoose's optimistic-concurrency error (see Listing's optimisticConcurrency schema option) -
+  // a .save() lost a race against a concurrent write to the same document. Also a client-retryable
+  // conflict, not a server fault.
+  if (err.name === "VersionError") {
+    return res.status(409).json({ error: { message: "This record was modified by someone else - please reload and try again" } });
+  }
+
   const statusCode = err.statusCode || 500;
   const body = {
     error: {

@@ -18,7 +18,15 @@ const listingSchema = new Schema(
     openings: { type: Number, default: null, min: 1 },
     filledCount: { type: Number, default: 0, min: 0 },
   },
-  { timestamps: { createdAt: "createdAt", updatedAt: false } }
+  {
+    timestamps: { createdAt: "createdAt", updatedAt: false },
+    // Guards updateListing()'s load-then-.save() against lost updates: a stale .save() (the
+    // in-memory document's __v no longer matches what's in the database) throws VersionError
+    // instead of silently overwriting a concurrent edit. Scoped to this schema only — it has no
+    // effect on the findOneAndUpdate slot-claim in application.service.js's apply(), which never
+    // loads a document via .save() and doesn't touch __v at all.
+    optimisticConcurrency: true,
+  }
 );
 
 // Text index powers full-text search on title/description (Phase 5).

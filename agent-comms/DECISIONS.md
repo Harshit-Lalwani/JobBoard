@@ -403,3 +403,49 @@ slot, rolling back the application if the claim fails) — rejected because it d
 write first and the cheap check second, backwards from claim-then-insert; it also means a failed claim
 has to delete a document that was already visible to any concurrent read in between, a worse failure
 window than releasing a plain counter.
+
+## Stress-test-driven hardening — Phase 2: E11000 → 409 globally, status-transition compare-and-swap
+**Decision:** Three changes. (1) `errorHandler.js` gained a global branch mapping MongoDB's duplicate-key
+error (`err.code === 11000`) to a clean 409, plus one for Mongoose's `VersionError` to 409. (2) `Listing`'s
+schema gained `optimisticConcurrency: true`, so `updateListing()`'s load-then-`.save()` throws `VersionError`
+instead of silently overwriting a concurrent edit — scoped to that schema only, so it has no effect on
+`apply()`'s `findOneAndUpdate`-based slot claim, which never calls `.save()`. (3) `updateApplicationStatus()`
+was rewritten from read-modify-write to compare-and-swap: `findOneAndUpdate({ _id, status: fromStatus }, ...)`,
+returning a clean 409 if another request already changed the status out from under it.
+**A correction worth recording:** the plan going in was that Finding 1 (duplicate-apply race → 500) would
+be fixed here, in Phase 2. It turned out to already be fixed — as an incidental side effect of Phase 1's
+`apply()` rewrite, which added a local `try/catch` for `err.code === 11000` while building the slot-claim
+compensation logic (see the Phase 1 entry above). Discovered this while trying to write Phase 2's
+regression test and finding it passed against code that hadn't had the Phase 2 fix applied yet. Re-verified
+by isolating exactly what Phase 2 changed (via a scoped `git stash` of only the Phase 2 diff) and confirming
+`apply()`'s protection was already present in what remained. **The honest fix for "prove Phase 2's actual
+new contribution" was to find a genuinely still-unprotected duplicate-key race** — `auth.service.js`'s
+`register()` has the identical `findOne`-then-`create()` shape apply() originally had, with no local
+handling at all, making it the correct target to demonstrate the new *global* `errorHandler.js` branch.
+**A second, more interesting correction, about reproducing races at all:** getting the registration race to
+actually manifest in a Jest test needed real investigation, not just `Promise.all`. In this environment (a
+fast local in-memory MongoDB, single Node process), concurrent `findOne`-then-`create()` sequences kept
+*serializing in practice* — by the time each call's `findOne` ran, a previous call's `create()` had usually
+already completed, so the app-level pre-check caught every "duplicate" before any of them reached MongoDB's
+unique index at all, and the bug being tested for never actually triggered. Confirmed this precisely with
+direct experiments: 20 bare `Model.create()` calls with *no* preceding `findOne` raced reliably (1 success,
+19 real `E11000`s) every time, proving the race is real; but wrapping the same calls in the `findOne`-guarded
+service function made it disappear. The fix that actually worked: inject an artificial ~20ms delay into the
+model's `create()` call (via `jest.spyOn`) so every concurrent request's `findOne` genuinely overlaps with
+every other's in-flight `create()`, widening the true race window from "usually doesn't happen" to "always
+does." This is why both regression tests in `tests/concurrency/` include that delay — without it, they'd be
+flaky at best, silently useless at worst (green for the wrong reason).
+**Verification:** `tests/concurrency/duplicateApply.test.js`'s registration race explicitly verified
+fail-before/pass-after by stashing *only* the `errorHandler.js` diff — confirmed 9 of 10 concurrent
+registrations returned raw HTTP 500 without the fix, and exactly one 201 plus nine clean 409s with it
+restored. `tests/concurrency/statusTransitionRace.test.js` was verified the same way against the full
+Phase 2 diff: two concurrent, individually-legal transitions from `applied` (`→shortlisted`, `→rejected`)
+returned `[200, 200]` before the fix — with the final state landing on `shortlisted` despite `rejected`
+(a terminal state) having been written first — and `[200, 409]` after, with `statusHistory` and `status`
+guaranteed consistent. 126/126 tests passing (123 previous + 3 new).
+**Alternatives considered:** retrying the CAS automatically on a 409 (re-read the new status, re-validate,
+re-attempt) instead of surfacing the conflict to the client — rejected for this endpoint specifically,
+since an automatic retry could silently apply a transition the poster didn't actually intend once they see
+the application's true current state (e.g., they clicked "reject" on what they saw as `applied`, but it's
+now `shortlisted` — auto-retrying "reject" against the new state isn't obviously correct, whereas surfacing
+the conflict and letting the poster look and decide again is).
