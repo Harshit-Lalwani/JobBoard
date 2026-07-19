@@ -586,3 +586,32 @@ and the real Upstash instance connected, confirming `{"status":"ready","checks":
 per-request logger on every single request) and its ecosystem's `pino-http` gave request-id
 correlation essentially for free; rejected Winston as a heavier dependency for no corresponding
 benefit here.
+
+## Stress-test-driven hardening — Phase 5c: Docker + Compose for local dev
+**Decision:** `backend/Dockerfile` + a root `docker-compose.yml` (backend + a real MongoDB) as a
+one-command local-dev alternative to installing MongoDB directly. This is explicitly *not* how the
+app deploys to production — that's still Vercel + Atlas, unchanged.
+**Honestly flagged, not silently assumed working:** Docker was not available in the environment
+this was authored in, so `docker build`/`docker compose up` themselves were never executed. What
+*was* verified without Docker: ran the exact `npm ci --omit=dev` install and the exact env vars
+`docker-compose.yml` sets, directly against a real MongoDB, and confirmed the app starts, connects,
+serves `/health`/`/ready` correctly, and — specifically because `NODE_ENV=production` is set the
+same way the Dockerfile sets it — that production-mode JSON logging is active rather than
+`pino-pretty` (a devDependency the production image never installs). This is a meaningfully higher
+bar than "wrote a Dockerfile and assumed it works," but it is not the same as actually running it in
+a container, and the docs say so.
+**`COPY package*.json ./` + `COPY src ./src`, deliberately not `COPY . .`:** the repo root has a real
+GCP service-account key file (`gen-lang-client-*.json`) sitting next to `backend/`. Scoping the
+compose build context to `backend/` already keeps that file out of the build context entirely, and
+explicit `COPY` lines mean even a wider context (someone building from the repo root with `-f
+backend/Dockerfile`) wouldn't pull it in. A `.dockerignore` inside `backend/` is added as
+defense-in-depth for the same reason, with a comment explaining why it *can't* reference the key
+file directly (`.dockerignore` patterns can't reach outside the build context to a parent directory).
+**Why Redis/GCS/real secrets are absent from `docker-compose.yml`:** the point of this file is
+letting someone `git clone` and run the app with zero external accounts. Every optional dependency
+already degrades gracefully when unconfigured (local-disk storage, in-memory rate limiting, no
+cache) — the compose stack simply relies on those existing fallbacks rather than requiring Upstash/
+GCP credentials just to try the app locally.
+**Alternatives considered:** a multi-stage build separating a "build" stage from a "runtime" stage —
+unnecessary here since this is a plain ESM Node/Express app with no compilation/bundling step; a
+single stage with `npm ci --omit=dev` already produces a minimal, correct runtime image.

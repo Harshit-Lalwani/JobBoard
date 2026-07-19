@@ -212,7 +212,32 @@ env vars:
 
 ---
 
+## Running locally with Docker instead (optional — not how this deploys to production)
+
+A `docker-compose.yml` at the repo root brings up the backend + a real MongoDB with one command,
+for anyone who'd rather not install MongoDB locally. This is a **local-dev convenience**, not the
+production deploy path — production is Vercel (serverless) + Atlas, per everything above.
+
+```bash
+docker compose up --build
+# backend on http://localhost:4000, GET /health should return {"status":"ok"}
+```
+
+- ⚠️ **Written but not run in the environment that authored it** (no Docker available there). It was
+  checked as thoroughly as possible without Docker itself — the exact `npm ci --omit=dev` install and
+  the exact env vars `docker-compose.yml` sets were run directly (outside a container) against a real
+  MongoDB and confirmed working, including that production-mode JSON logging is active and
+  `/health`/`/ready` both respond correctly. But `docker build`/`docker compose up` themselves were
+  never executed — please verify once before relying on it.
+- Resume storage, Redis, and real JWT secrets are all deliberately **not** set in `docker-compose.yml` —
+  the stack runs standalone with zero external accounts needed. Uploads fall back to local disk *inside
+  the container* (ephemeral — fine for trying the app locally, not for anything you want to persist).
+- The `Dockerfile` copies `package*.json` and `src/` explicitly, never `COPY . .` — the repo root has a
+  real GCP service-account key file sitting next to `backend/`, and a blanket copy from a wider build
+  context would bake it into an image layer. See the comments in `backend/Dockerfile` and
+  `backend/.dockerignore` for the full reasoning.
+
 ## What's genuinely optional
-- The Redis-caching item from `agent-comms/PLAN.md`'s "Optional / Deferred" section is still optional —
-  nothing above requires it.
 - Frontend tests still don't exist (noted in `README.md`) — not a deployment blocker.
+- An async job queue/outbox and a Postgres analytics read-model were considered and deliberately not
+  built — see [`FUTURE_WORK.md`](FUTURE_WORK.md) for why.

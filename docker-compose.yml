@@ -1,0 +1,45 @@
+# ⚠️ Unverified — Docker was not available in the environment this was written in. Please
+# `docker compose up` this yourself before relying on it (see DEPLOYMENT.md).
+#
+# One-command local stack: backend + a real MongoDB, for anyone cloning the repo who doesn't want
+# to install/run MongoDB themselves. This is a local-dev convenience, not the production deploy —
+# the app actually deploys to Vercel + Atlas (see DEPLOYMENT.md); this file exists so the
+# benchmark/load-test harness in backend/loadtest/ is reproducible for anyone, not just on this
+# machine.
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGO_URI: mongodb://mongo:27017/jobboard
+      JWT_ACCESS_SECRET: docker-compose-dev-secret
+      JWT_REFRESH_SECRET: docker-compose-dev-secret-2
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_TTL: 30d
+      CORS_ORIGIN: http://localhost:5173
+      # Resume storage, Redis, etc. are all optional (see backend/.env.example) — omitted here so
+      # this stack runs standalone with zero external accounts; uploads fall back to local disk
+      # inside the container (ephemeral — fine for a local dev stack, not for production, which is
+      # exactly why the real deploy uses GCS/Vercel Blob instead, see DEPLOYMENT.md).
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:

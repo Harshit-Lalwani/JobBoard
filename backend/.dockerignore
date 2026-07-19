@@ -1,0 +1,15 @@
+# Defense-in-depth alongside the Dockerfile's explicit COPY list (which already only copies
+# package*.json and src/) — this matters if the Dockerfile is ever changed to use `COPY . .`.
+# Note: the GCP service-account key file (gen-lang-client-*.json) lives at the *repo root*, one
+# level above this backend/ directory — as long as the build context stays scoped to `backend/`
+# (as docker-compose.yml sets it), that file is never part of the build context in the first place,
+# .dockerignore patterns can't reach outside the context to exclude it, and none is needed here.
+node_modules
+.env
+.env.local
+coverage
+uploads
+tests
+loadtest
+scripts
+*.log
