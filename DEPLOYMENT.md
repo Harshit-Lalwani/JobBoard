@@ -104,6 +104,17 @@ this if you have a specific reason to. Callouts below are marked **[Option B onl
 - [ ] In your Vercel project (create it in step 5 first if you haven't) → Storage → create a **Blob**
       store. Vercel gives you a `BLOB_READ_WRITE_TOKEN` — copy it for step 4.
 
+### 3b. Upstash Redis (distributed rate limiting + listing cache) — optional but recommended
+- [ ] Create a free database at [upstash.com](https://upstash.com) (Redis → Create Database — the
+      free tier is enough for this project's traffic).
+- [ ] Open the database → REST API section → copy the `UPSTASH_REDIS_REST_URL` and
+      `UPSTASH_REDIS_REST_TOKEN` values for step 4. Upstash's REST API (not a raw Redis connection) is
+      what makes this work on Vercel serverless — no persistent connection to manage per function
+      instance.
+- [ ] If skipped: the app falls back to the original in-memory rate limiter automatically (works, just
+      doesn't coordinate across multiple serverless instances) and simply doesn't cache listings — no
+      code change needed either way, this is purely an env-var toggle.
+
 ### 4. Environment variables
 Set these in Vercel (Project Settings → Environment Variables), for both Production and Preview:
 - [ ] `MONGO_URI` — the Atlas connection string from step 1.
@@ -115,6 +126,8 @@ Set these in Vercel (Project Settings → Environment Variables), for both Produ
 - [ ] **If using GCS:** `GCS_BUCKET` (the bucket name) and `GOOGLE_APPLICATION_CREDENTIALS_JSON` (the
       service-account key file's full contents, pasted as one line) — from step 3.
 - [ ] **If using Vercel Blob instead:** `BLOB_READ_WRITE_TOKEN` — from step 3.
+- [ ] **If using Upstash (recommended):** `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` — from
+      step 3b.
 - [ ] `CORS_ORIGIN` — **[Option B only]**: your frontend's deployed URL (e.g.
       `https://your-app.vercel.app`). **[Option A]**: irrelevant, same-origin means CORS isn't in play.
 - [ ] `NODE_ENV=production` — Vercel sets this automatically; this is what flips the refresh cookie's

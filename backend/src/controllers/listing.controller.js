@@ -11,7 +11,8 @@ export async function createListing(req, res, next) {
 
 export async function getListing(req, res, next) {
   try {
-    const listing = await listingService.getListing(req.params.id);
+    const { listing, cacheHit } = await listingService.getListing(req.params.id);
+    res.set("X-Cache", cacheHit ? "HIT" : "MISS");
     res.json(listing);
   } catch (err) {
     next(err);

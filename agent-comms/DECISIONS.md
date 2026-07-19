@@ -504,3 +504,48 @@ the rare-term full-scan cost hiding behind a misleadingly fast common-term measu
 - **Collation index + case-insensitive anchored regex** — tested directly: still produces `COLLSCAN`.
   Collation affects string *comparison* semantics, not whether the query planner can use an index bound
   for a regex with the `"i"` flag. Confirms the fix had to remove the flag itself, not work around it.
+
+## Stress-test-driven hardening — Phase 4: distributed rate limiter + cache (Upstash Redis)
+**Decision:** `config/redis.js` exports a `redis` client (or `null` if `UPSTASH_REDIS_REST_URL`/`TOKEN`
+aren't set) using the same tiered-fallback shape already established in `storage.service.js`
+(GCS → Vercel Blob → local disk): every Redis-dependent code path checks whether `redis` is truthy and
+degrades gracefully when it isn't, rather than requiring Redis as a hard dependency. Two consumers:
+`applyRateLimiter` (Redis-backed sliding window via `@upstash/ratelimit`, falling back to the original
+in-memory `express-rate-limit` when unconfigured) and `getListing` (cache-aside on `GET
+/api/listings/:id`, 30s TTL, invalidated on `updateListing`/`deleteListing`).
+**Why this closes a real, previously self-documented gap, not a decorative one:** the in-memory rate
+limiter's per-instance-not-global behavior was already called out as a known limitation as far back as
+Phase 0 of the original build (`agent-comms/DECISIONS.md`) — under serverless fan-out, `limit ×
+instance-count` requests get through, not `limit`. This phase actually fixes it, rather than re-describing
+it as accepted scope.
+**Fail-open, deliberately, in both consumers:** if Redis is configured but unreachable, `applyRateLimiter`
+lets the request through and `getListing` falls through to MongoDB — a Redis outage should degrade
+performance/abuse-resistance, not take down the apply flow or the listing page entirely. This is the same
+philosophy as `apply()`'s own error handling elsewhere in this codebase: a secondary system failing should
+not be allowed to fail the primary one it's supporting.
+**Why cache only `GET /api/listings/:id`, not the browse list:** a single listing is fetched repeatedly by
+many different visitors once it's popular — exactly the Zipf-skewed shape the Phase 0 seed models for
+applications, and the same shape real traffic to a specific job posting would have. The browse list
+(`listListings`) has too many distinct filter/cursor/search combinations for a cache to usefully
+deduplicate; caching it would mean a near-100% miss rate in practice, which is decoration, not a cache.
+**Why invalidation is explicit-on-write, not on every `filledCount` change:** `updateListing` and
+`deleteListing` invalidate the cache immediately (poster-driven edits should be visible right away).
+`apply()`'s slot-claim increments to `filledCount` (Phase 1) deliberately do **not** invalidate the cache
+on every single application — that would mean a popular, actively-applied-to listing effectively never
+gets a cache hit, defeating the purpose entirely. The 30s TTL bounds how stale a cached `filledCount`/
+`status` can get from this specific path. A real product might chase tighter consistency here (e.g.
+invalidate specifically on the auto-close transition); documented as a deliberate scope line for this
+project, not an oversight.
+**Verification:** unit tests for both consumers, using mocked Redis clients so the ordinary test suite
+never makes a real network call (`tests/middleware/rateLimit.distributed.test.js` covers success /
+limit-exceeded / fail-open-on-error; `tests/services/listingCache.test.js` covers miss-populates-cache,
+hit-skips-DB, fail-open-on-read-error, and invalidation on update/delete). Separately, **measured against
+a real, live Upstash instance** (not mocked) with a Zipf-skewed access pattern: **73.2% hit rate** over
+2000 requests against a 500-listing pool (`loadtest/cache-hit-rate.js`), with an `X-Cache: HIT`/`MISS`
+response header added specifically so this is observable rather than assumed — confirmed showing `MISS`
+then `HIT` on two successive fetches of the same listing before running the full measurement.
+**Alternatives considered:** invalidating on every `filledCount` change (rejected above — defeats the
+cache for exactly the listings popular enough to benefit from one); a longer TTL for a higher hit rate —
+rejected as a way to inflate the headline number without a real tradeoff analysis; 30s balances staleness
+against hit rate reasonably for a demo, and the honest framing is "here's the measured number at this TTL,"
+not "here's the best possible number."

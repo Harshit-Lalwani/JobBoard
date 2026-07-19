@@ -193,6 +193,45 @@ measured earlier as a poor fit at this scale — see the Phase 3 entry) or a ded
 
 ---
 
+## Finding 5 — Distributed rate limiter and cache hit rate (Redis / Upstash)
+
+Two closes-the-documented-gaps items, both against a **live Upstash Redis instance**, not a mock — this
+section is the one place in this document where "before" is a documented, self-admitted limitation
+(README/`DECISIONS.md`) rather than a bug found by stress testing.
+
+**Rate limiter.** The original in-memory limiter (`express-rate-limit`) doesn't coordinate across
+multiple server instances — each instance has its own counter, so the *effective* limit under serverless
+fan-out is `limit × instance count`, not `limit`. `applyRateLimiter` now tries a Redis-backed sliding
+window (`@upstash/ratelimit`) first, falling back to the in-memory version when Upstash isn't configured
+(local dev/tests) and **failing open** (letting the request through) if Redis is configured but
+unreachable — an outage in the rate limiter shouldn't take down the entire apply flow. Verified with
+mocked unit tests (`tests/middleware/rateLimit.distributed.test.js`) covering the success, limit-exceeded,
+and fail-open-on-error paths — a real multi-instance-coordination demonstration would need an actual
+multi-instance deployment, which is out of scope for a benchmark meant to be rerunnable on one machine;
+the coordination itself is Upstash's guarantee, not something this project re-implements or re-tests.
+
+**Cache hit rate — measured, not assumed.** `GET /api/listings/:id` now checks Redis before MongoDB, with
+a 30s TTL and explicit invalidation on `updateListing`/`deleteListing`. Measured against a live Upstash
+instance with a Zipf-skewed access pattern (same distribution shape as the Phase 0 seed's applications —
+a handful of listings get most of the traffic, a long tail gets little, modeling "popular postings get
+viewed far more than obscure ones"):
+
+```
+node loadtest/cache-hit-rate.js
+Requests: 2000, unique listings in pool: 500
+Hits: 1464  Misses: 536  Unlabeled/errors: 0
+Hit rate: 73.2%
+```
+
+Confirmed the `X-Cache` header (added specifically so hit rate is *observable*, not inferred) reports
+`MISS` on first fetch and `HIT` on the immediate next fetch of the same listing, before running the full
+2000-request measurement. Note this specific measurement used a smaller seed (`--scale=5000`, not
+`--scale=large`) — the hit rate depends on *access-pattern skew and TTL*, not on total dataset size, so a
+smaller, faster-to-seed dataset is the honest choice here rather than reusing the 100k-listing seed out of
+habit.
+
+---
+
 ## How to reproduce
 
 1. Start a local MongoDB (standalone is fine — no replica set needed for anything in this round).

@@ -10,9 +10,9 @@ Full original spec: [`Initial_prompt.md`](Initial_prompt.md).
 ## Stack
 
 - **Backend:** Node.js + Express, MongoDB + Mongoose, JWT auth (access + refresh), bcrypt, multer,
-  Google Cloud Storage (resume uploads)
+  Google Cloud Storage (resume uploads), Redis (Upstash — distributed rate limiting + caching)
 - **Frontend:** React (Vite), React Router, Tailwind CSS v4, Axios
-- **Tests:** Jest + Supertest (backend only — 131 tests, see [Testing](#testing))
+- **Tests:** Jest + Supertest (backend only — 139 tests, see [Testing](#testing))
 
 ## Setup
 
@@ -164,11 +164,18 @@ Deliberately *not* rotating the refresh token on each use (simpler to reason abo
 stolen token staying valid until logout/expiry rather than being invalidated on next legitimate use) — a
 real tradeoff, not an oversight.
 
-**Rate limiting: in-memory, keyed by user id.** `POST /applications/:listingId/apply` is limited to 5
-requests/minute per authenticated user (not per IP — IP-based limiting is trivially routed around and
-false-positives on shared/NAT'd IPs). Redis-backed limiting was considered and explicitly deferred (see
-below) — in-memory is a real limitation (doesn't survive a restart, doesn't work across multiple backend
-instances) but proportionate for this project's scope.
+**Rate limiting and caching: Redis (Upstash) when configured, graceful fallback otherwise.**
+`POST /applications/:listingId/apply` is limited to 5 requests/minute per authenticated user (not per IP
+— IP-based limiting is trivially routed around and false-positives on shared/NAT'd IPs), via a
+Redis-backed sliding window (`@upstash/ratelimit`) when `UPSTASH_REDIS_REST_URL`/`TOKEN` are set, falling
+back to the original in-memory limiter otherwise (local dev/tests) — and **failing open** if Redis is
+configured but momentarily unreachable, since a rate-limiter outage shouldn't take down the apply flow.
+`GET /api/listings/:id` is cached the same way (cache-aside, 30s TTL, invalidated on
+update/delete) — measured at a **73.2% hit rate** under a Zipf-skewed access pattern against a live
+Upstash instance (see [`BENCHMARKS.md`](BENCHMARKS.md), Finding 5). Both closed a limitation this README
+used to list as an accepted gap — see the Phase 4 entry in `DECISIONS.md` for why in-memory rate limiting
+under serverless fan-out was a real problem (`limit × instance count`, not `limit`), not a hypothetical
+one.
 
 **Resume upload: storage isolated behind one function.** `multer.memoryStorage()` only parses the
 multipart request into a buffer; a separate `storage.service.js` (`saveFile(file) -> url`) is the *only*
@@ -181,16 +188,19 @@ moves. See `DEPLOYMENT.md` for the GCS setup steps (bucket IAM, service-account 
 Vercel needs the credentials passed as a JSON env var rather than a file path).
 
 **Known, explicit tradeoffs (not oversights):**
-- **Redis caching — deferred, not built.** The spec listed it as optional; skipped for scope reasons.
-  The design (cache hot listings by id, invalidate on that listing's `PUT`) is still fully describable,
-  just not implemented — see the Phase 0 entry in `DECISIONS.md`.
 - **Frontend duplicates the status-transition graph.** `frontend/src/utils/statusMachine.js` is a second,
   hand-kept-in-sync copy of the backend's transition table, used only to decide which "move to X" buttons
   the pipeline board shows. The backend independently re-validates every transition regardless, so a
   drifted frontend copy would only ever cause a confusing UI (showing/hiding the wrong buttons), never a
   security or data-integrity issue — but it is a real duplication, called out explicitly in both files'
   comments rather than hidden.
-- **In-memory rate limiter**, as above — doesn't scale past one backend process.
+- **Cache invalidation is explicit-on-write, not on every state change.** `apply()`'s slot-claim
+  increments to a listing's `filledCount` don't invalidate its cache entry on every single application —
+  only `updateListing`/`deleteListing` do. A 30s TTL bounds the staleness this can introduce. Deliberate:
+  invalidating on every application would mean a popular, actively-applied-to listing rarely gets a cache
+  hit, defeating the point. See the Phase 4 entry in `DECISIONS.md`.
+- **Postgres, an async job queue/outbox, and multi-recruiter "hiring teams" were considered and
+  deliberately not built** — see [`FUTURE_WORK.md`](FUTURE_WORK.md) for the reasoning behind each.
 
 ## Build process
 

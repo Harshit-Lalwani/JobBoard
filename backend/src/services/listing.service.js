@@ -1,11 +1,47 @@
 import { Listing } from "../models/Listing.js";
 import { ApiError } from "../middleware/errorHandler.js";
 import { encodeCursor, decodeCursor } from "../utils/cursor.js";
+import { redis } from "../config/redis.js";
 
 // Escapes regex metacharacters in user input before it's used to build a RegExp — without this,
 // a search term like "a.b" or "(" would either match too broadly or throw a SyntaxError.
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const LISTING_CACHE_TTL_SECONDS = 30;
+function listingCacheKey(id) {
+  return `jobboard:listing:${id}`;
+}
+
+// Cache reads/writes fail open (treated as a miss / silently skipped) rather than surfacing an
+// error — same philosophy as the rate limiter: a Redis blip should degrade to "slower," not "the
+// listing page is down." Only active when redis is configured (see config/redis.js).
+async function getCachedListing(id) {
+  if (!redis) return null;
+  try {
+    return await redis.get(listingCacheKey(id));
+  } catch {
+    return null;
+  }
+}
+
+async function setCachedListing(id, listing) {
+  if (!redis) return;
+  try {
+    await redis.set(listingCacheKey(id), listing, { ex: LISTING_CACHE_TTL_SECONDS });
+  } catch {
+    // ignore — see comment above
+  }
+}
+
+async function invalidateListingCache(id) {
+  if (!redis) return;
+  try {
+    await redis.del(listingCacheKey(id));
+  } catch {
+    // ignore — see comment above
+  }
 }
 
 export async function createListing(posterId, data) {
@@ -16,12 +52,24 @@ export async function createListing(posterId, data) {
   return listing;
 }
 
+// Returns { listing, cacheHit } — the controller surfaces cacheHit as an X-Cache response header
+// so cache effectiveness can actually be measured under load (see loadtest/), not just assumed.
+// Only GET-by-id is cached: it's the one endpoint a popular listing gets hit on repeatedly by many
+// different visitors (the Zipf-skewed access pattern the Phase 0 seed models), whereas the browse
+// list (listListings) has too many distinct filter/cursor combinations to cache usefully.
 export async function getListing(id) {
+  const cached = await getCachedListing(id);
+  if (cached) {
+    return { listing: cached, cacheHit: true };
+  }
+
   const listing = await Listing.findById(id).populate("posterId", "name email");
   if (!listing) {
     throw new ApiError(404, "Listing not found");
   }
-  return listing;
+
+  await setCachedListing(id, listing.toObject());
+  return { listing, cacheHit: false };
 }
 
 export async function updateListing(id, posterId, data) {
@@ -42,6 +90,7 @@ export async function updateListing(id, posterId, data) {
 
   Object.assign(listing, data);
   await listing.save();
+  await invalidateListingCache(id);
   return listing;
 }
 
@@ -55,6 +104,7 @@ export async function deleteListing(id, posterId) {
   }
 
   await Listing.deleteOne({ _id: id });
+  await invalidateListingCache(id);
 }
 
 // Poster-scoped: unlike listListings, this returns every status (not just "open") since a

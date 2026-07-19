@@ -8,3 +8,9 @@ process.env.GCS_BUCKET = "";
 process.env.GOOGLE_APPLICATION_CREDENTIALS = "";
 process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON = "";
 process.env.BLOB_READ_WRITE_TOKEN = "";
+
+// Same reasoning, same fix, for Redis: without this, tests would hit a real Upstash instance
+// (rate-limit keys and cached listings) whenever a developer has real credentials in their local
+// backend/.env. Tests always exercise the in-memory rate limiter / no-cache fallback instead.
+process.env.UPSTASH_REDIS_REST_URL = "";
+process.env.UPSTASH_REDIS_REST_TOKEN = "";
