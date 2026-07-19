@@ -145,7 +145,51 @@ errors: 0  timeouts: 0  non2xx: 0
 The wide gap between p50 and p97.5 is exactly the common/rare split above — roughly a third of the mixed
 request set are rare-term searches paying the full-scan cost.
 
-**After:** _(to be filled in once the Phase 3 index fix lands — same seed, same commands)_
+**After:** replaced the unanchored case-insensitive regex against raw `title`/`description` with an
+anchored (no `"i"` flag) prefix match against a precomputed, lowercase `searchTerms` word array, backed
+by a real compound index (`listing_search_terms: {status:1, searchTerms:1, createdAt:-1, _id:-1}`) — the
+`"i"` flag, not case itself, is what made the original query unable to use an index bound; lowercasing
+both the stored data and the query term at write/query time removes the need for it. Same commands, same
+100k-listing seed:
+
+**`explain()` — the mechanism, before vs. after:**
+
+| Search term | Before: stage / keys / docs / time | After: stage / keys / docs / time |
+|---|---|---|
+| `"ma"` (common) | LIMIT / 30 / 30 / 25ms | LIMIT / 32 / 32 / **4ms** |
+| `"99999"` (rare — the real worst case) | LIMIT / 100,000 / 100,000 / **434ms** | FETCH / 2 / 1 / **0ms** |
+| location filter (`"remote"`, anchored on `locationLower`) | — | LIMIT / 79 / 79 / 0ms |
+
+The rare-term case — which is the realistic one, per the "before" analysis above — goes from examining
+**every document in the collection** to examining **one key and one document**: an index seek instead of
+a scan, exactly the `COLLSCAN`-equivalent-cost → real-index-seek transition this fix was meant to produce.
+
+**Throughput, same mixed query mix, same 20 connections / 20s:**
+```
+p50: 50ms   p97.5: 97ms   p99: 115ms
+throughput: 366.9 req/sec
+errors: 0  timeouts: 0  non2xx: 0
+```
+| | Before | After | Delta |
+|---|---|---|---|
+| p50 | 41ms | 50ms | slightly higher (extra lowercasing/regex construction per request — negligible) |
+| p97.5 | 608ms | 97ms | **6.3× lower** |
+| p99 | 654ms | 115ms | **5.7× lower** |
+| throughput | 112.0 req/sec | 366.9 req/sec | **3.3× higher** |
+
+p50 barely moved (the common-term case was never the problem — it already terminated early via the sort
+index). The entire improvement is in the tail, which is exactly where the rare-term full-scan cost was
+hiding — confirming the mechanism-level fix (`explain()` above) is what actually drove the throughput
+result, not a coincidental speedup.
+
+**Documented, accepted narrowing of behavior (not silently dropped):** the old unanchored regex matched a
+substring *anywhere*, including mid-word (`"chine"` matched `"machine"`). The new approach matches a
+*word prefix* — `"ma"` still matches `"Machine"` (a word starting with "ma"), but `"chine"` no longer
+would. Tags and location similarly narrow from "substring anywhere" to "prefix of the tag / prefix of the
+location string." This is the deliberate tradeoff described in `agent-comms/DECISIONS.md`: the realistic
+"type and see results as you go" search pattern is a prefix match, and it's the one that's now indexed
+and fast; true arbitrary-substring search would need a different structure entirely (trigram indexing,
+measured earlier as a poor fit at this scale — see the Phase 3 entry) or a dedicated search engine.
 
 ---
 

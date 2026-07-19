@@ -16,8 +16,8 @@ const baseUrl = process.argv[2] || "http://localhost:4000";
 const requests = [
   { method: "GET", path: "/api/listings?limit=10" },
   { method: "GET", path: "/api/listings?search=ma&limit=10" },
-  { method: "GET", path: "/api/listings?search=%2399999&limit=10" }, // rare — worst case
-  { method: "GET", path: "/api/listings?search=%2312345&limit=10" }, // rare — worst case
+  { method: "GET", path: "/api/listings?search=99999&limit=10" }, // rare — the old worst case
+  { method: "GET", path: "/api/listings?search=12345&limit=10" }, // rare — the old worst case
   { method: "GET", path: "/api/listings?tags=node&limit=10" },
   { method: "GET", path: "/api/listings?location=Remote&limit=10" },
 ];

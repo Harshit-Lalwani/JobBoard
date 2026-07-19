@@ -12,7 +12,7 @@ Full original spec: [`Initial_prompt.md`](Initial_prompt.md).
 - **Backend:** Node.js + Express, MongoDB + Mongoose, JWT auth (access + refresh), bcrypt, multer,
   Google Cloud Storage (resume uploads)
 - **Frontend:** React (Vite), React Router, Tailwind CSS v4, Axios
-- **Tests:** Jest + Supertest (backend only — 116 tests, see [Testing](#testing))
+- **Tests:** Jest + Supertest (backend only — 131 tests, see [Testing](#testing))
 
 ## Setup
 
@@ -114,8 +114,8 @@ agent-comms/        the phase-wise build plan and its full decision/handoff hist
 | PUT | `/api/applications/:id/status` | poster | enforces the transition state machine |
 | POST | `/api/uploads/resume` | required | multipart PDF upload |
 
-`GET /api/listings` query params: `search` (text index), `tags`, `location`, `status` (default `open`),
-`cursor`, `limit`.
+`GET /api/listings` query params: `search` (word-prefix match, see below), `tags`, `location`, `status`
+(default `open`), `cursor`, `limit`.
 
 ## Architecture & design decisions (interview prep)
 
@@ -131,14 +131,19 @@ timestamps), so it's O(page size) no matter how deep you've paged. The tradeoff:
 the browse page reflects this honestly with a "Load more" button rather than numbered pages, since a
 cursor genuinely can't support arbitrary jumps.
 
-**Index design on `Listing`.** Three indexes, each earning its keep: a weighted text index on
-`{title: 5, description: 1}` (title matches rank above body matches in `$text` search — MongoDB allows
-only one text index per collection, so title/description have to share it, hence the weighting); a
-compound index on `{tags: 1, location: 1, status: 1}` ordered by expected selectivity (tags, an
-array field queried with `$in`, is usually most selective; low-cardinality `status` goes last since it
-barely narrows the index); and a separate `{createdAt: -1, _id: -1}` index dedicated to cursor
-pagination — kept separate from the filter index because unfiltered browsing needs fast pagination too,
-and an index led by `tags`/`location`/`status` wouldn't help a query with no filters at all.
+**Search: word-prefix match against a precomputed field, not a live substring scan.** `search` matches
+against `searchTerms` — a deduplicated array of lowercase word tokens computed from `title + description`
+on every save (`utils/searchTerms.js`, kept in sync via a `pre("validate")` hook so no call site can
+forget it) — using an *anchored, case-sensitive-on-lowercase-data* regex, backed by a real compound index
+(`{status: 1, searchTerms: 1, createdAt: -1, _id: -1}`). `tags` and `location` use the identical
+technique (lowercased at write time, anchored prefix at query time). This replaced an earlier version
+that used an unanchored, case-insensitive regex directly against the raw fields — measured at 100k
+listings to cost **434ms and a full 100,000-document scan** for a realistic (rare, specific) search term,
+because a case-insensitive regex can't use an index bound at all, anchored or not. The fix isn't free:
+it narrows "substring anywhere" to "prefix of a word" (`"ma"` still matches `"Machine"`, `"chine"` no
+longer does) — a deliberate, measured tradeoff, not an oversight. Full story, including why a text index
+and a naive trigram index were both rejected, in [`agent-comms/DECISIONS.md`](agent-comms/DECISIONS.md)
+(Phase 3) and the before/after numbers in [`BENCHMARKS.md`](BENCHMARKS.md).
 
 **Status-transition state machine.** The legal pipeline graph
 (`applied → shortlisted → interview → offer`, `rejected` reachable from any non-terminal state and

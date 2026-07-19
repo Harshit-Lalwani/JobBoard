@@ -1,9 +1,13 @@
-// Captures MongoDB's query plan for the exact query listListings() builds, so BENCHMARKS.md has
+// Captures MongoDB's query plan for the exact queries listListings() builds, so BENCHMARKS.md has
 // mechanism evidence (COLLSCAN vs IXSCAN), not just a latency number. Run directly against
 // whatever database MONGO_URI points at (the seeded load-test database).
 import mongoose from "mongoose";
 import { Listing } from "../src/models/Listing.js";
 import { env } from "../src/config/env.js";
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 async function explainOne(label, filter) {
   const start = process.hrtime.bigint();
@@ -25,21 +29,23 @@ async function explainOne(label, filter) {
 async function main() {
   await mongoose.connect(env.mongoUri);
 
-  function escapeRegExp(value) {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-  const searchPattern = new RegExp(escapeRegExp("ma"), "i");
-
-  await explainOne("Current: unanchored case-insensitive regex search=\"ma\"", {
+  // Post-fix (Phase 3): anchored, no-"i"-flag prefix match against the precomputed searchTerms
+  // multikey field — see models/Listing.js / utils/searchTerms.js / DECISIONS.md Phase 3.
+  await explainOne("Fixed: anchored prefix search=\"ma\" against searchTerms", {
     status: "open",
-    $or: [{ title: searchPattern }, { description: searchPattern }],
+    searchTerms: new RegExp(`^${escapeRegExp("ma")}`),
   });
 
   await explainOne("Unfiltered browse (status only)", { status: "open" });
 
-  await explainOne("Location filter (unanchored regex)", {
+  await explainOne("Fixed: rare term search=\"99999\" against searchTerms (was the 434ms/100k-doc worst case)", {
     status: "open",
-    location: new RegExp(escapeRegExp("Remote"), "i"),
+    searchTerms: new RegExp(`^${escapeRegExp("99999")}`),
+  });
+
+  await explainOne("Fixed: location filter, anchored prefix against locationLower", {
+    status: "open",
+    locationLower: new RegExp(`^${escapeRegExp("remote")}`),
   });
 
   await mongoose.disconnect();

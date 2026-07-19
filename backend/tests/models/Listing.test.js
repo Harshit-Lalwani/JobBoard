@@ -47,11 +47,30 @@ describe("Listing model", () => {
     ).rejects.toThrow();
   });
 
-  it("exposes the text and compound indexes used for search/filtering", async () => {
+  it("exposes the indexes backing search/filter/pagination (Phase 3 — see DECISIONS.md for why the original text/compound indexes were replaced)", async () => {
     const indexes = await Listing.collection.indexes();
     const indexNames = indexes.map((i) => i.name);
 
-    expect(indexNames).toContain("listing_text_search");
-    expect(indexNames).toContain("listing_filter_compound");
+    expect(indexNames).toContain("listing_cursor_pagination");
+    expect(indexNames).toContain("listing_search_terms");
+    expect(indexNames).toContain("listing_tags_filter");
+    expect(indexNames).toContain("listing_location_filter");
+    expect(indexNames).toContain("listing_poster_listings");
+  });
+
+  it("derives searchTerms and locationLower automatically, and lowercases tags", async () => {
+    const listing = await Listing.create({
+      title: "Machine Learning Engineer",
+      description: "Build scalable systems",
+      tags: ["Node", "MongoDB"],
+      location: "New York",
+      posterId,
+    });
+
+    expect(listing.searchTerms).toEqual(
+      expect.arrayContaining(["machine", "learning", "engineer", "build", "scalable", "systems"])
+    );
+    expect(listing.locationLower).toBe("new york");
+    expect(listing.tags).toEqual(["node", "mongodb"]);
   });
 });

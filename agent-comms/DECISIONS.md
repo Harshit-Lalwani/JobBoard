@@ -449,3 +449,58 @@ since an automatic retry could silently apply a transition the poster didn't act
 the application's true current state (e.g., they clicked "reject" on what they saw as `applied`, but it's
 now `shortlisted` — auto-retrying "reject" against the new state isn't obviously correct, whereas surfacing
 the conflict and letting the poster look and decide again is).
+
+## Stress-test-driven hardening — Phase 3: listing search made indexable, index audit
+**Decision:** Replaced the unanchored, case-insensitive `RegExp` search against raw `title`/`description`
+with an anchored (no `"i"` flag), lowercase-on-lowercase prefix match against a precomputed `searchTerms`
+field — a deduplicated array of lowercase word tokens from `title + description`
+(`utils/searchTerms.js`), kept in sync automatically via a `pre("validate")` hook on `Listing` (so no call
+site can forget to recompute it). Backed by a real compound index,
+`listing_search_terms: { status: 1, searchTerms: 1, createdAt: -1, _id: -1 }`. The same technique — a
+lowercased copy + anchored regex — was applied to `tags` (lowercased at the schema level) and `location`
+(a new `locationLower` field, keeping `location` itself for display casing).
+**Why the `"i"` flag was the real problem, not case or anchoring alone:** confirmed by direct experiment
+before implementing: a case-insensitive regex cannot use an index bound *regardless* of anchoring or
+collation — even a collation-index + anchored-regex combination (tested explicitly) still produced
+`COLLSCAN`. Lowercasing both the stored field and the incoming query term removes the need for `"i"`
+entirely, and *then* an anchored prefix regex becomes a genuine indexed range query.
+**Why a word-array (`searchTerms`), not just a lowercased whole-string prefix:** a plain
+`locationLower`-style single-string field only lets a query match from the very first character of the
+combined text — "ma" would match "Machine Learning Engineer" (starts with "Machine") but not "Senior
+Machine Learning Engineer" (doesn't start with "Machine"). Splitting into individual word tokens and
+indexing the resulting multikey array lets a prefix match hit *any* word in the title/description, which
+is what the realistic "type and see results" UX actually needs. This does **narrow** behavior from the
+original substring-anywhere search: `"ma"` still matches `"Machine"` (word-prefix), but `"chine"` (a
+mid-word match) no longer would, and a multi-word query phrase isn't specially handled. Documented and
+accepted — see `BENCHMARKS.md` Finding 4 for the measured payoff this narrowing buys.
+**Index audit, not just index addition:** the original `listing_text_search` (a `$text` index) was dead
+code — nothing in the codebase ever issued a `$text` query — and the original `listing_filter_compound`
+(`{tags, location, status}`) was already unselectable by the actual query shapes even before this phase,
+since every real predicate against it was a case-insensitive regex. Both removed. The schema-level
+`index: true` on `tags` (a redundant single-field index, duplicating what a leading compound-index key
+already covers) was also removed. Replaced with three targeted compound indexes
+(`listing_search_terms`, `listing_tags_filter`, `listing_location_filter`) — kept *separate* rather than
+one grand compound index because MongoDB compound indexes allow at most one multikey (array) field, and
+`searchTerms`/`tags` are both arrays, so they can't share an index. Also added
+`listing_poster_listings: { posterId: 1, createdAt: -1 }` for `listMyListings`, previously an unindexed
+collection scan + in-memory sort.
+**Verification, at the same 100k-listing / 800k-application scale as the baseline:** `explain()` on the
+worst-case rare-term query (matches 1 of 100,000 listings — the realistic case, per the Phase 0 baseline)
+went from `100,000 keys/docs examined, 434ms` to `2 keys examined, 1 doc examined, 0ms`. Mixed-query
+throughput benchmark: p50 essentially unchanged (41ms → 50ms — the common-term case was never the actual
+problem), **p97.5 608ms → 97ms (6.3× lower)**, **p99 654ms → 115ms (5.7× lower)**, throughput 112 → 367
+req/sec (3.3× higher). The tail-latency-only improvement is itself evidence the fix targeted the right
+thing: the common-term case already terminated early via the existing sort index before this phase, so a
+fix that only moved the tail (not the median) is exactly what should happen when the actual problem was
+the rare-term full-scan cost hiding behind a misleadingly fast common-term measurement.
+**Alternatives considered (measured, not guessed) — see also the earlier design-phase experiments:**
+- **Trigram/n-gram indexing** (true arbitrary substring match) — measured at 50k docs: 15.6MB of extra
+  index for 26× the size of the chosen approach, and *worse* latency (27.3ms vs 0.9ms in that earlier
+  experiment) because a short query (e.g. "ma") produces very few, low-selectivity trigrams. Rejected on
+  measurement.
+- **MongoDB Atlas Search** — would give genuine substring/fuzzy search, but is Atlas-only, meaning the
+  before/after in `BENCHMARKS.md` could not be reproduced on a local machine, which defeats the purpose of
+  a benchmark anyone can rerun. Rejected for this project's constraints, not on technical merit.
+- **Collation index + case-insensitive anchored regex** — tested directly: still produces `COLLSCAN`.
+  Collation affects string *comparison* semantics, not whether the query planner can use an index bound
+  for a regex with the `"i"` flag. Confirms the fix had to remove the flag itself, not work around it.

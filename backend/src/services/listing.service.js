@@ -60,6 +60,8 @@ export async function deleteListing(id, posterId) {
 // Poster-scoped: unlike listListings, this returns every status (not just "open") since a
 // poster managing their own listings needs to see closed ones too. No pagination — bounded to
 // one poster's own listings, not the kind of unbounded public browse Phase 5's cursor is for.
+// Backed by the listing_poster_listings index (posterId, createdAt) — previously an unindexed
+// collection scan + in-memory sort.
 export async function listMyListings(posterId) {
   const listings = await Listing.find({ posterId }).sort({ createdAt: -1 });
   return listings;
@@ -73,24 +75,32 @@ export async function listListings(query) {
   const match = { status };
   const andConditions = [];
 
-  // Substring, case-insensitive search on title/description. Note: this is a regex query, not
-  // the $text index search from the original design — see DECISIONS.md for why (the text index
-  // only matches whole tokens, which doesn't support "ma" matching "machine" the way a live
-  // search box needs to).
+  // Anchored (no "i" flag), lowercase-on-lowercase prefix match against the precomputed
+  // searchTerms multikey field (see models/Listing.js / utils/searchTerms.js), instead of an
+  // unanchored case-insensitive regex against raw title/description. An unanchored or
+  // case-insensitive regex cannot use an index bound at all — confirmed by explain() at 100k-doc
+  // scale to be a full collection scan (see BENCHMARKS.md, Finding 4 / agent-comms/DECISIONS.md
+  // Phase 3). Lowercasing both the stored data and the query term removes the need for the "i"
+  // flag, and anchoring to a per-word field (rather than the raw field) is what makes "ma" still
+  // match "Machine" as a *word* prefix — the accepted narrowing versus the old behavior is that a
+  // multi-word phrase query, or a mid-word match like "chine", is no longer supported; a
+  // single-word prefix (the realistic "type and see results" case) is indexed and fast.
   if (search) {
-    const searchPattern = new RegExp(escapeRegExp(search), "i");
-    andConditions.push({ $or: [{ title: searchPattern }, { description: searchPattern }] });
+    const pattern = new RegExp(`^${escapeRegExp(search.toLowerCase())}`);
+    andConditions.push({ searchTerms: pattern });
   }
 
-  // Substring, case-insensitive match per tag (so "ma" matches a "machine-learning" tag), not
-  // exact tag equality.
+  // Anchored prefix match per tag against the already-lowercased `tags` field (schema-level
+  // `lowercase: true`), same reasoning as search above.
   if (tags && tags.length > 0) {
-    match.tags = { $in: tags.map((tag) => new RegExp(escapeRegExp(tag), "i")) };
+    match.tags = { $in: tags.map((tag) => new RegExp(`^${escapeRegExp(tag.toLowerCase())}`)) };
   }
 
-  // Substring, case-insensitive match on location, not exact equality.
+  // Anchored prefix match against `locationLower`, same reasoning as search above. Narrows
+  // "substring anywhere" to "prefix of the location string" — covers the realistic case (typing
+  // the start of a city/region name) and stays indexed; documented in DECISIONS.md.
   if (location) {
-    match.location = new RegExp(escapeRegExp(location), "i");
+    match.locationLower = new RegExp(`^${escapeRegExp(location.toLowerCase())}`);
   }
 
   // Cursor pagination: if cursor is provided, only return items after this cursor
