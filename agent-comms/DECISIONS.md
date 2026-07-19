@@ -318,3 +318,40 @@ instead of permanent public read), but adds real complexity (URL expiry means a 
 yesterday can 403 today, needs a regeneration strategy) for a portfolio-scale app where resumes aren't
 sensitive enough to justify it; rejected as disproportionate, consistent with the Vercel Blob branch's own
 `access: "public"` choice already made in Phase 13.
+
+## Stress-test-driven hardening — Phase 0: seed script, load harness, committed baseline
+**Decision:** Before touching any code, seed the database at realistic scale (100k listings / 800k
+applications, `backend/scripts/seed-load.js`) and record load-test results as a committed baseline
+(`BENCHMARKS.md`) — a reproducible command, raw output, and honest caveats — before writing a single
+fix. Every later fix in this round must show a before/after pair against the same seed and command.
+**Why:** an "improvement" claimed without a recorded starting point is unverifiable, and retroactively
+guessing a baseline after the fix already landed is common and dishonest. This also surfaced that the
+project's real problems were latent — nothing in the app is contended or slow at the ~30-listing scale it
+had before, so none of what follows could have been found without deliberately generating scale and
+concurrency first.
+**What the baseline run actually found (all in `BENCHMARKS.md`, verified live against a running server):**
+- The duplicate-apply race (`application.service.js:6-21`) returns **HTTP 500 with the raw MongoDB driver
+  error leaked in the response body** for 4 of 10 concurrent identical requests — the unique index
+  correctly blocks the duplicate, but nothing maps `E11000` to a clean 409.
+- The status-transition race (`application.service.js:40-65`) is a genuine data-integrity bug, not just a
+  timing curiosity: two concurrent, individually-legal transitions (`applied→shortlisted`,
+  `applied→rejected`) both return 200, and the final state ends up `shortlisted` — silently bypassing
+  `rejected`'s terminal-state guarantee in `statusMachine.js`.
+- Listing search's cost is **data-dependent**, which is a more precise and more useful finding than a
+  blanket "full collection scan" claim: because the sort is served by an existing index, a *common* search
+  term (`"ma"`, matching ~1/3 of the seeded corpus) terminates early and looks fast (25ms); a *rare* term
+  (matching 1 of 100,000 docs — the realistic case, since real searches target a specific skill/role) pays
+  the full cost of walking the entire collection (434ms, 100,000 docs examined). The naive framing
+  ("always COLLSCAN") would have been wrong; measuring instead of guessing caught that.
+**Tooling notes worth keeping:** `autocannon` chosen as an npm devDependency over k6/wrk/ab — none were
+preinstalled, and autocannon needs no system install, which also means it can run in CI later without
+extra setup. It's the wrong tool for concurrency *correctness* though — throughput/percentiles only; the
+race demonstrations above used plain `Promise.all` against the live API, which is what Phase 2's
+regression tests will formalize. Also: running the persistent load-test MongoDB instance *alongside* the
+Jest suite (which spins its own ephemeral `mongodb-memory-server` per test file) caused severe resource
+contention — 69 spurious test failures and a 322s run instead of the normal ~15s. Not a real regression;
+stopping the load-test Mongo before running `npm test` restored a clean 116/116. Documented here so it
+doesn't get mistaken for an actual break later.
+**Alternatives considered:** Seeding through the HTTP API instead of direct Mongoose bulk inserts —
+rejected, since 800k applications through the real endpoints would take hours and would also hit the
+per-user apply rate limiter, which is itself correct behavior, not a seeding obstacle to route around.
