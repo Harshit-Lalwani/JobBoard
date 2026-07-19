@@ -33,6 +33,13 @@ export async function updateListing(id, posterId, data) {
     throw new ApiError(403, "You can only edit your own listings");
   }
 
+  if (data.openings != null && data.openings < listing.filledCount) {
+    throw new ApiError(
+      400,
+      `openings cannot be less than filledCount (${listing.filledCount} applicants already hold a slot)`
+    );
+  }
+
   Object.assign(listing, data);
   await listing.save();
   return listing;

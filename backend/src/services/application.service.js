@@ -3,21 +3,81 @@ import { Listing } from "../models/Listing.js";
 import { ApiError } from "../middleware/errorHandler.js";
 import { isLegalTransition } from "../utils/statusMachine.js";
 
+// Reverses the atomic claim in apply() when a slot was claimed but no application was ultimately
+// created (duplicate applicant — see below). Deliberately does NOT reopen an auto-closed listing:
+// that would be ambiguous against a poster manually closing the listing at the same moment, and a
+// slot freed by this specific edge case (duplicate-key collision on the very last slot) is rare
+// enough that requiring the poster to manually reopen is an acceptable, safe default.
+async function releaseSlot(listingId) {
+  await Listing.updateOne({ _id: listingId }, { $inc: { filledCount: -1 } });
+}
+
 export async function apply(listingId, applicantId, data) {
-  // Check if already applied (db unique constraint is the guard; this is defense-in-depth)
-  const existing = await Application.findOne({ listingId, applicantId });
-  if (existing) {
-    throw new ApiError(409, "You have already applied to this listing");
+  const listing = await Listing.findById(listingId);
+  if (!listing) {
+    throw new ApiError(404, "Listing not found");
   }
 
-  const application = await Application.create({
-    listingId,
-    applicantId,
-    resumeUrl: data.resumeUrl,
-    coverNote: data.coverNote,
-  });
+  const isLimited = listing.openings != null;
 
-  return application;
+  if (isLimited) {
+    // Atomic slot claim: a plain query operator can't compare filledCount against another field
+    // in the same document (filledCount: { $lt: "$openings" } silently matches nothing — it treats
+    // "$openings" as a literal string, not a field reference; see DECISIONS.md). $expr is required.
+    // The pipeline-form update also auto-closes the listing in the same atomic operation once the
+    // increment fills the last slot, so "claim" and "auto-close" can never observably race each
+    // other. No transaction needed - it's a single document.
+    const claimed = await Listing.findOneAndUpdate(
+      { _id: listingId, status: "open", $expr: { $lt: ["$filledCount", "$openings"] } },
+      [
+        {
+          $set: {
+            filledCount: { $add: ["$filledCount", 1] },
+            status: {
+              $cond: [{ $gte: [{ $add: ["$filledCount", 1] }, "$openings"] }, "closed", "$status"],
+            },
+          },
+        },
+      ],
+      { new: true }
+    );
+    if (!claimed) {
+      // The claim's own filter already made the correctness decision atomically; this re-read is
+      // only to report *which* reason applies, not to re-decide.
+      const current = await Listing.findById(listingId);
+      if (!current || current.status !== "open") {
+        throw new ApiError(409, "This listing is closed");
+      }
+      throw new ApiError(409, "This listing has no openings remaining");
+    }
+  } else if (listing.status !== "open") {
+    throw new ApiError(409, "This listing is closed");
+  }
+
+  try {
+    // Check if already applied (db unique constraint is the guard; this is defense-in-depth).
+    const existing = await Application.findOne({ listingId, applicantId });
+    if (existing) {
+      if (isLimited) await releaseSlot(listingId);
+      throw new ApiError(409, "You have already applied to this listing");
+    }
+
+    return await Application.create({
+      listingId,
+      applicantId,
+      resumeUrl: data.resumeUrl,
+      coverNote: data.coverNote,
+    });
+  } catch (err) {
+    // Duplicate-key race: two concurrent first-time applies from the same applicant can both pass
+    // the findOne check above and both reach create() - the unique index (Application.js) catches
+    // the loser here. Same compensation either way this is detected.
+    if (err.code === 11000) {
+      if (isLimited) await releaseSlot(listingId);
+      throw new ApiError(409, "You have already applied to this listing");
+    }
+    throw err;
+  }
 }
 
 export async function getApplicationsForListing(listingId, posterId) {

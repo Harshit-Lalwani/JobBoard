@@ -12,6 +12,11 @@ const listingSchema = new Schema(
     location: { type: String, required: true, trim: true },
     posterId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     status: { type: String, enum: LISTING_STATUSES, default: "open" },
+    // null = unlimited openings (the default — preserves existing behavior for every listing
+    // created before this field existed, and for posters who don't care to cap applicants).
+    // The slot-claim guard in application.service.js only activates when this is a number.
+    openings: { type: Number, default: null, min: 1 },
+    filledCount: { type: Number, default: 0, min: 0 },
   },
   { timestamps: { createdAt: "createdAt", updatedAt: false } }
 );

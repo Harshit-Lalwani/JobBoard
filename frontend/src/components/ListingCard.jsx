@@ -11,6 +11,11 @@ export function ListingCard({ listing }) {
         <span className="shrink-0 text-sm text-stone-500">{listing.location}</span>
       </div>
       <p className="mt-2 line-clamp-2 text-sm text-stone-600">{listing.description}</p>
+      {listing.openings != null && (
+        <p className="mt-2 text-xs font-medium text-stone-500">
+          {Math.max(listing.openings - listing.filledCount, 0)} of {listing.openings} openings left
+        </p>
+      )}
       {listing.tags?.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-2">
           {listing.tags.map((tag) => (

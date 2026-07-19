@@ -355,3 +355,51 @@ doesn't get mistaken for an actual break later.
 **Alternatives considered:** Seeding through the HTTP API instead of direct Mongoose bulk inserts —
 rejected, since 800k applications through the real endpoints would take hours and would also hit the
 per-user apply rate limiter, which is itself correct behavior, not a seeding obstacle to route around.
+
+## Stress-test-driven hardening — Phase 1: limited openings per listing
+**Decision:** Added `openings` (default `null` = unlimited) and `filledCount` (default `0`) to `Listing`.
+`apply()` claims a slot with a single atomic guarded update rather than a read-then-write, and auto-closes
+the listing in the same operation once the last slot fills.
+**Why:** the app previously had no scarce resource, so no two writers could ever genuinely contend over
+the same document — which is exactly why the concurrency bugs in Phase 0's baseline had never been
+noticed. `openings` is also a legitimate ATS feature on its own (cap applicants per role), not manufactured
+purely to create a race.
+**Two things the implementation gets right that a naive version wouldn't, both verified before writing
+the real code:**
+- **`filledCount: { $lt: "$openings" }` in a plain filter silently matches nothing.** MongoDB treats
+  `"$openings"` there as a literal string, not a field reference — the query would just never match, and
+  the feature would look broken (every apply rejected) with no error to explain why. The fix is `$expr:
+  { $lt: ["$filledCount", "$openings"] }`. Confirmed by direct experiment before landing this in
+  `application.service.js`.
+- **`openings` defaults to `null`, not `1`.** Defaulting to 1 would make the *second* applicant to every
+  existing listing get rejected, breaking a large share of the already-passing test suite in confusing,
+  hard-to-trace ways. The slot guard in `apply()` only activates when `listing.openings != null`, so every
+  listing created before this feature (and every listing created without setting it) keeps working exactly
+  as it did.
+- **Claim and auto-close happen in one atomic operation** (an aggregation-pipeline `findOneAndUpdate`, not
+  two separate writes), so there's no window where the last slot is claimed but the listing still reports
+  `open`. Verified the pipeline-update syntax directly (`$set` with `$cond`) before relying on it — no
+  transaction needed since it's a single document.
+**Compensation, not a transaction:** if the slot claim succeeds but the application ultimately isn't
+created (the applicant already applied — either found via a pre-check, or via the unique-index race
+described in Phase 2 below), the claimed slot is released with a plain `$inc: { filledCount: -1 }`.
+Deliberately does **not** auto-reopen a listing that got auto-closed by the claim — reopening would be
+ambiguous against a poster manually closing the listing at the same moment, and the specific edge case that
+would free a slot this way (a duplicate-key collision on the very last slot) is rare enough that requiring
+a manual reopen is an acceptable, explicit tradeoff rather than added complexity to resolve an edge case.
+**Known, accepted limitation:** no transaction guards the claim against a process crash between the slot
+claim and the application write — a crash in that exact window leaks one slot permanently. Fixing this
+properly needs either a replica-set transaction (the test environment runs standalone Mongo, so this would
+also require switching `mongodb-memory-server` to `MongoMemoryReplSet`) or a reconciliation job — both are
+disproportionate to this project's scale and traffic. Documented as a real, known gap rather than solved.
+**Verification:** `tests/routes/application.openings.test.js` — single-request behavior (accept under cap,
+auto-close on last slot, clean 409 when full, no regression when unlimited, reject applying to a closed
+listing, reject lowering `openings` below `filledCount`) plus the actual point of the feature: 30 concurrent
+distinct applicants against a 10-opening listing — verified **exactly 10 accepted, 20 clean 409s,
+`filledCount` ends at exactly 10, and `Application.countDocuments` confirms no over-allocation and no
+phantom documents.**
+**Alternatives considered:** insert-then-increment (create the `Application` first, then try to claim a
+slot, rolling back the application if the claim fails) — rejected because it does the expensive/side-effecting
+write first and the cheap check second, backwards from claim-then-insert; it also means a failed claim
+has to delete a document that was already visible to any concurrent read in between, a worse failure
+window than releasing a plain counter.
