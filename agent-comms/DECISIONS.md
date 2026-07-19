@@ -549,3 +549,40 @@ cache for exactly the listings popular enough to benefit from one); a longer TTL
 rejected as a way to inflate the headline number without a real tradeoff analysis; 30s balances staleness
 against hit rate reasonably for a demo, and the honest framing is "here's the measured number at this TTL,"
 not "here's the best possible number."
+
+## Stress-test-driven hardening — Phase 5: CI, structured logging, health/readiness split
+**Decision:** Three independent pieces of "cheap credibility" infrastructure.
+1. **`.github/workflows/ci.yml`**: backend (`npm test && npm run lint`) and frontend (`npm run build
+   && npm run lint`) as two parallel jobs, on every push/PR to `main`. Worth noting explicitly:
+   `vercel.json`'s `buildCommand` runs no backend tests at all, so this CI workflow is currently the
+   *only* thing that would catch a backend regression before it deploys.
+2. **Structured logging** (`pino` + `pino-http`, replacing `morgan`): every request gets a
+   correlation id — reused from an incoming `X-Request-Id` header if a client/proxy already set
+   one, otherwise generated fresh — set back on the response and attached to `req.log`, so a log
+   line from `errorHandler.js` and pino-http's own request-summary line share the same id and can
+   be correlated in a real log aggregator. JSON output in production; `pino-pretty` (a
+   devDependency, not shipped to production) for readability in dev. Explicitly silenced under
+   Jest (`JEST_WORKER_ID` is set by Jest itself) — per-request log dumps for hundreds of test
+   requests would bury actual test failures in noise, and the point of structured logging is
+   observability in a *running* system, not test output.
+3. **`/health` vs `/ready` split.** `/health` (liveness) checks nothing but "is the process
+   responding" — a liveness probe failing normally triggers a restart, and restarting wouldn't fix
+   a downstream MongoDB/Redis outage, only add unnecessary churn on top of it. `/ready` (readiness)
+   actually checks `mongoose.connection.readyState` and, if configured, pings Redis — an
+   orchestrator/load-balancer should stop routing traffic to an instance failing *this* one,
+   without necessarily restarting it. Collapsing these into one endpoint (as the original `/health`
+   did) can't express that distinction at all.
+**Why this is genuinely useful and not just decoration:** this project has real prior evidence that a
+narrow test suite plus no CI let a serverless deploy break silently — the entrypoint bug documented
+earlier in this file was caught by *manually* deploying and reading Vercel's error, not by anything
+automated. CI running the existing 139+ tests on every push directly closes that specific gap.
+**Verification:** `tests/routes/health.routes.test.js` (both endpoints; confirms `/health` is
+unconditionally 200 and `/ready` reports `mongo: true` when connected, with `redis` simply absent —
+not `false` — when Upstash isn't configured, matching `config/redis.js`'s null-when-unconfigured
+shape used everywhere else). Manually smoke-tested `/ready` against a live server with both MongoDB
+and the real Upstash instance connected, confirming `{"status":"ready","checks":{"mongo":true,"redis":true}}`.
+139 → 141 tests, lint clean, frontend build/lint unaffected.
+**Alternatives considered:** Winston instead of pino — pino is meaningfully faster (relevant for a
+per-request logger on every single request) and its ecosystem's `pino-http` gave request-id
+correlation essentially for free; rejected Winston as a heavier dependency for no corresponding
+benefit here.

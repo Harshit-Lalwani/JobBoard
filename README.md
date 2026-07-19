@@ -1,5 +1,7 @@
 # Job Board — MERN Application Pipeline
 
+![CI](https://github.com/Harshit-Lalwani/JobBoard/actions/workflows/ci.yml/badge.svg)
+
 A mini-ATS: **posters** create job/task listings, **applicants** browse and apply, and posters move
 applicants through a pipeline — `applied → shortlisted → interview → offer` (or `rejected` from any
 non-terminal stage). Built as a portfolio project to demonstrate REST API design, MongoDB schema/index
@@ -10,9 +12,11 @@ Full original spec: [`Initial_prompt.md`](Initial_prompt.md).
 ## Stack
 
 - **Backend:** Node.js + Express, MongoDB + Mongoose, JWT auth (access + refresh), bcrypt, multer,
-  Google Cloud Storage (resume uploads), Redis (Upstash — distributed rate limiting + caching)
+  Google Cloud Storage (resume uploads), Redis (Upstash — distributed rate limiting + caching),
+  structured logging (pino + pino-http, request-correlation IDs)
 - **Frontend:** React (Vite), React Router, Tailwind CSS v4, Axios
-- **Tests:** Jest + Supertest (backend only — 139 tests, see [Testing](#testing))
+- **Tests:** Jest + Supertest (backend only — 141 tests, see [Testing](#testing))
+- **CI:** GitHub Actions — backend tests/lint + frontend build/lint on every push/PR (`.github/workflows/ci.yml`)
 
 ## Setup
 
@@ -113,9 +117,13 @@ agent-comms/        the phase-wise build plan and its full decision/handoff hist
 | GET | `/api/applications/listing/:listingId` | poster | applicants for one of your listings |
 | PUT | `/api/applications/:id/status` | poster | enforces the transition state machine |
 | POST | `/api/uploads/resume` | required | multipart PDF upload |
+| GET | `/health` | — | liveness — always 200 if the process is up, checks nothing else |
+| GET | `/ready` | — | readiness — checks MongoDB connection state, and Redis if configured |
 
 `GET /api/listings` query params: `search` (word-prefix match, see below), `tags`, `location`, `status`
-(default `open`), `cursor`, `limit`.
+(default `open`), `cursor`, `limit`. Responses include an `X-Cache: HIT`/`MISS` header on
+`GET /api/listings/:id` (see the caching entry below) and an `X-Request-Id` header on every response
+(structured request logging, see below).
 
 ## Architecture & design decisions (interview prep)
 

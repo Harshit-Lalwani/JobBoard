@@ -53,8 +53,17 @@ export function errorHandler(err, req, res, next) {
   };
 
   if (statusCode >= 500) {
-    // eslint-disable-next-line no-console
-    console.error(err);
+    // req.log is pino-http's per-request logger (see app.js) — bound with this request's
+    // correlation id, so this line and the request-summary line pino-http logs automatically
+    // share the same id and can be correlated in any log aggregator. Falls back to console.error
+    // if req.log isn't present (e.g. a unit test that constructs errorHandler's args directly
+    // without going through the real pinoHttp middleware).
+    if (req.log) {
+      req.log.error({ err }, err.message);
+    } else {
+      // eslint-disable-next-line no-console
+      console.error(err);
+    }
   }
 
   res.status(statusCode).json(body);
